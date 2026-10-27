@@ -262,9 +262,33 @@ export function saveWorkspaceStorage(key, payload, spacing = 0) {
   return serialized;
 }
 
+// Reads whatever is currently stored under `key` without enforcing the
+// strict `boards`/`groups` schema that `loadWorkspaceStorage` requires.
+// `updateActiveWorkspaceStorage` performs incremental merges (camera state,
+// toggles, etc.) that happen long before a full workspace (with boards) is
+// ever saved — requiring a fully valid document here would reject that
+// legitimate partial state and silently drop it on every subsequent merge.
+function readRawWorkspaceStorage(key) {
+  try {
+    const serialized = localStorage.getItem(key);
+    if (!serialized) return null;
+    const parsed = JSON.parse(serialized);
+    if (!parsed || typeof parsed !== "object") return null;
+    const payload = "workspace" in parsed ? parsed.workspace : parsed;
+    return payload && typeof payload === "object" ? payload : null;
+  } catch (error) {
+    console.error(
+      "[workspaceSerialization] Failed to read raw workspace storage:",
+      key,
+      error,
+    );
+    return null;
+  }
+}
+
 export function updateActiveWorkspaceStorage(updater) {
   try {
-    const current = loadWorkspaceStorage(ACTIVE_WORKSPACE_KEY) || {};
+    const current = readRawWorkspaceStorage(ACTIVE_WORKSPACE_KEY) || {};
     const next = updater(current);
     return saveWorkspaceStorage(ACTIVE_WORKSPACE_KEY, next);
   } catch (error) {

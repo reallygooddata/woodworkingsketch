@@ -4,6 +4,27 @@ import { propagateMove, checkConstraintConflict, solveFlushSnap, faceToAxis } fr
 import { WOOD_CATALOGUE, PAINT_PALETTE } from '../../utils/materialCatalogue';
 import { calculateBoardCuts } from '../../utils/miterSawCalculator';
 
+// Returns an auto-incremented clone name ("Leg" -> "Leg 2" -> "Leg 3", ...)
+// matching the convention the Inspector's "Clone Component" button has always
+// used, so a duplicate created any way (button or keyboard shortcut) reads
+// the same. `existingBoards` should include any clones already assigned a
+// name earlier in the same batch, so a multi-board duplicate doesn't hand out
+// the same name twice.
+const nextCloneName = (existingBoards, originalName) => {
+  const match = originalName.match(/^(.*?)(?:\s\d+)?$/);
+  const baseName = match ? match[1].trim() : originalName.trim();
+  let maxIdx = 0;
+  existingBoards.forEach(b => {
+    if (b.name === baseName) {
+      maxIdx = Math.max(maxIdx, 1);
+    } else {
+      const m = b.name.match(new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s(\\d+)$`));
+      if (m) maxIdx = Math.max(maxIdx, parseInt(m[1]));
+    }
+  });
+  return `${baseName} ${maxIdx > 0 ? maxIdx + 1 : 2}`;
+};
+
 export const createBoardSlice = (set, get) => ({
   miterSawCuts: null,
   miterSawBoardId: null,
@@ -1121,6 +1142,177 @@ export const createBoardSlice = (set, get) => ({
         setConfirmDialog(null);
       }
     });
+  },
+  // Clones a single board: offsets the copy along its own thin/local axis
+  // (default) or a chosen world axis, auto-increments its name ("Leg" ->
+  // "Leg 2"), and clears its constraints. This is the Inspector's "Clone
+  // Component" button logic, lifted into the store so the Ctrl/Cmd+D
+  // keyboard shortcut can reuse the exact same behavior for a single-board
+  // selection instead of a separate, cruder duplicate path.
+  cloneBoard: (boardId, { cloneMode = 'local', cloneOffset = 0.75, recordStep = true } = {}) => {
+    const {
+      boards,
+      units,
+      pushHistory,
+      setBoards,
+      setSelectedItemIds,
+      addRecordedStep
+    } = get();
+    const selectedBoard = boards.find(b => b.id.toString() === boardId.toString());
+    if (!selectedBoard) return null;
+
+    const newPos = [...selectedBoard.position];
+
+    if (cloneMode === 'local') {
+      const minSize = Math.min(...selectedBoard.size);
+      const thickAxis = selectedBoard.size.indexOf(minSize);
+
+      const dx = thickAxis === 0 ? cloneOffset : 0;
+      const dy = thickAxis === 1 ? cloneOffset : 0;
+      const dz = thickAxis === 2 ? cloneOffset : 0;
+
+      const [rx, ry, rz] = selectedBoard.orientation || [0, 0, 0];
+      let wx = dx, wy = dy, wz = dz;
+      if (rx !== 0 || ry !== 0 || rz !== 0) {
+        const a = Math.cos(rx), sb = Math.sin(rx);
+        const c = Math.cos(ry), d = Math.sin(ry);
+        const ce = Math.cos(rz), f = Math.sin(rz);
+        const cce = c * ce, ccf = c * f, de = d * ce, df = d * f;
+        wx = (cce + df * sb) * dx + (de * sb - ccf) * dy + (a * d) * dz;
+        wy = (a * f) * dx + (a * ce) * dy + (-sb) * dz;
+        wz = (ccf * sb - de) * dx + (df + cce * sb) * dy + (a * c) * dz;
+      }
+
+      newPos[0] += wx;
+      newPos[1] += wy;
+      newPos[2] += wz;
+    } else {
+      const axisIndex = cloneMode === 'worldX' ? 0 : cloneMode === 'worldY' ? 1 : 2;
+      newPos[axisIndex] += cloneOffset;
+    }
+
+    const maxId = Math.max(...boards.map(b => parseInt(b.id) || 0), 0);
+    const newId = maxId + 1;
+
+    const newBoard = {
+      ...selectedBoard,
+      id: newId,
+      position: newPos,
+      constraints: [],
+      name: nextCloneName(boards, selectedBoard.name)
+    };
+
+    if (recordStep && addRecordedStep) {
+      const formatVal = (val) => {
+        if (units === 'metric') {
+          return `${(val * 25.4).toFixed(0)} mm`;
+        }
+        const standardFraction = val === 0.75 ? ' (3/4")' : val === 0.5 ? ' (1/2")' : val === 0.25 ? ' (1/4")' : val === 0.375 ? ' (3/8")' : '';
+        return `${parseFloat(val.toFixed(4))}"${standardFraction}`;
+      };
+
+      const offsetStr = formatVal(cloneOffset);
+      let modeBtn = 'Local (Auto)';
+      if (cloneMode === 'worldX') modeBtn = 'World X';
+      else if (cloneMode === 'worldY') modeBtn = 'World Y';
+      else if (cloneMode === 'worldZ') modeBtn = 'World Z';
+
+      const btnName = cloneMode === 'local' ? 'Clone (Thin Axis)' : `Clone along ${cloneMode.replace('world', '')}`;
+
+      const stepText = `In the Inspector Panel for \`${selectedBoard.name}\`, under **Clone Component**:\n` +
+        `*   Click the **${modeBtn}** button.\n` +
+        `*   Set the **Offset** to \`${offsetStr}\`.\n` +
+        `Click **${btnName}** to create a clone named \`${newBoard.name}\`.`;
+
+      addRecordedStep(stepText);
+    }
+
+    pushHistory();
+    setBoards([...boards, newBoard]);
+    setSelectedItemIds([newId.toString()]);
+    return newBoard;
+  },
+  // Clones the currently selected boards (and, for a selected assembly, all
+  // of its descendant boards) with fresh ids, offsetting the copies slightly
+  // so they're visibly distinct from the originals. Used by the Ctrl/Cmd+D
+  // keyboard shortcut. A single selected board delegates to `cloneBoard` so
+  // the shortcut behaves identically to the Inspector's "Clone Component"
+  // button; this generic diagonal-offset path only runs for multi-select or
+  // an assembly, where the single-board axis-aware offset doesn't apply.
+  duplicateSelected: () => {
+    const {
+      selectedItemIds,
+      boards,
+      groups,
+      cloneBoard,
+      pushHistory,
+      setBoards,
+      setSelectedItemIds
+    } = get();
+    if (selectedItemIds.length === 0) return;
+
+    if (selectedItemIds.length === 1 && !groups[selectedItemIds[0]]) {
+      cloneBoard(selectedItemIds[0], { recordStep: false });
+      return;
+    }
+
+    const boardIdsToDuplicate = new Set();
+    const collectGroupBoards = (groupId) => {
+      boards.forEach(b => {
+        if (b.parentId === groupId) boardIdsToDuplicate.add(b.id.toString());
+      });
+      Object.keys(groups).forEach(k => {
+        if (groups[k].parentId === groupId) collectGroupBoards(k);
+      });
+    };
+    selectedItemIds.forEach(id => {
+      if (groups[id]) {
+        collectGroupBoards(id);
+      } else {
+        boardIdsToDuplicate.add(id);
+      }
+    });
+    if (boardIdsToDuplicate.size === 0) return;
+
+    pushHistory();
+    const OFFSET = 2; // inches — nudges the copy so it doesn't sit exactly on the original
+    let idSeed = Date.now();
+    const newIds = [];
+    let namingPool = boards; // grows as names are assigned, so a batch never collides with itself
+    const newBoards = boards
+      .filter(b => boardIdsToDuplicate.has(b.id.toString()))
+      .map(b => {
+        const newId = idSeed++;
+        newIds.push(newId.toString());
+        const newBoard = {
+          ...b,
+          id: newId,
+          name: nextCloneName(namingPool, b.name),
+          position: [b.position[0] + OFFSET, b.position[1], b.position[2] + OFFSET],
+          // Per-board constraints are cleared on every other clone path in the
+          // codebase (handleClone, prepareBoardForMiterSaw) since they'd
+          // otherwise point at relationships that only made sense for the
+          // original board.
+          constraints: []
+        };
+        namingPool = [...namingPool, newBoard];
+        return newBoard;
+      });
+    setBoards(prev => [...prev, ...newBoards]);
+    setSelectedItemIds(newIds);
+  },
+  // Offsets the currently selected boards' positions by the given world-space
+  // delta. Used by arrow-key nudging; `recordHistory` is set to false for
+  // auto-repeated key events so holding an arrow key produces a single undo
+  // step instead of flooding the (capped) history stack.
+  nudgeSelected: (dx, dy, dz, { recordHistory = true } = {}) => {
+    const { selectedItemIds, pushHistory, setBoards } = get();
+    if (selectedItemIds.length === 0) return;
+    if (recordHistory) pushHistory();
+    setBoards(prev => prev.map(b => selectedItemIds.includes(b.id.toString()) ? {
+      ...b,
+      position: [b.position[0] + dx, b.position[1] + dy, b.position[2] + dz]
+    } : b));
   },
   handleNewBoardConfirm: () => {
     const {

@@ -12,6 +12,7 @@ const AppHeader = () => {
         setCabinetDialog, setShakerDoorDialog,
         recentFiles,
         handleUndo, handleRedo, history, redoHistory,
+        setShowKeyboardShortcutsDialog,
         showCutlistPanel, setShowCutlistPanel,
         showSettingsPanel, setShowSettingsPanel,
         showAssemblyLibrary, setShowAssemblyLibrary,
@@ -116,6 +117,7 @@ const AppHeader = () => {
                     <input type="file" id="project-import-input" accept=".json" style={{ display: 'none' }} onChange={importWorkspace} />
                     <span onClick={handleUndo} style={{ opacity: history.length ? 1 : 0.4, marginLeft: '8px', cursor: history.length ? 'pointer' : 'default' }}>↺ Undo ({history.length})</span>
                     <span onClick={handleRedo} style={{ opacity: redoHistory.length ? 1 : 0.4, marginLeft: '8px', cursor: redoHistory.length ? 'pointer' : 'default' }}>↻ Redo ({redoHistory.length})</span>
+                    <span onClick={() => setShowKeyboardShortcutsDialog(true)} title="Keyboard Shortcuts" style={{ marginLeft: '8px', cursor: 'pointer', opacity: 0.75 }}>⌨️ Shortcuts</span>
                 </div>
             </header>
 

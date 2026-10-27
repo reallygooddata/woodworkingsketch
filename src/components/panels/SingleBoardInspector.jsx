@@ -47,7 +47,8 @@ const SingleBoardInspector = ({ selectedBoard }) => {
         setShowToolsPanel,
         removeHardware, updateHardware, selectedHardwareId, setSelectedHardwareId,
         updateSelectedBoards, addRecordedStep,
-        incrementRotation, resetRotation
+        incrementRotation, resetRotation,
+        cloneBoard
     } = useStore();
 
     // Cancel constraint mode if selection no longer includes the source board
@@ -80,89 +81,7 @@ const SingleBoardInspector = ({ selectedBoard }) => {
 
     const handleClone = () => {
         if (!selectedBoard) return;
-        
-        const newPos = [...selectedBoard.position];
-
-        if (cloneMode === 'local') {
-            const minSize = Math.min(...selectedBoard.size);
-            const thickAxis = selectedBoard.size.indexOf(minSize);
-            
-            const dx = thickAxis === 0 ? cloneOffset : 0;
-            const dy = thickAxis === 1 ? cloneOffset : 0;
-            const dz = thickAxis === 2 ? cloneOffset : 0;
-
-            const [rx, ry, rz] = selectedBoard.orientation || [0, 0, 0];
-            let wx = dx, wy = dy, wz = dz;
-            if (rx !== 0 || ry !== 0 || rz !== 0) {
-                const a = Math.cos(rx), sb = Math.sin(rx);
-                const c = Math.cos(ry), d = Math.sin(ry);
-                const ce = Math.cos(rz), f = Math.sin(rz);
-                const cce = c*ce, ccf = c*f, de = d*ce, df = d*f;
-                wx = (cce+df*sb)*dx + (de*sb-ccf)*dy + (a*d)*dz;
-                wy = (a*f)*dx + (a*ce)*dy + (-sb)*dz;
-                wz = (ccf*sb-de)*dx + (df+cce*sb)*dy + (a*c)*dz;
-            }
-
-            newPos[0] += wx;
-            newPos[1] += wy;
-            newPos[2] += wz;
-        } else {
-            const axisIndex = cloneMode === 'worldX' ? 0 : cloneMode === 'worldY' ? 1 : 2;
-            newPos[axisIndex] += cloneOffset;
-        }
-
-        const maxId = Math.max(...boards.map(b => parseInt(b.id) || 0), 0);
-        const newId = maxId + 1;
-
-        const newBoard = {
-            ...selectedBoard,
-            id: newId,
-            position: newPos,
-            constraints: []
-        };
-
-        const match = selectedBoard.name.match(/^(.*?)(?:\s\d+)?$/);
-        const baseName = match ? match[1].trim() : selectedBoard.name.trim();
-        let maxIdx = 0;
-        boards.forEach(b => {
-            if (b.name === baseName) {
-                maxIdx = Math.max(maxIdx, 1);
-            } else {
-                const m = b.name.match(new RegExp(`^${baseName.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\s(\\d+)$`));
-                if (m) maxIdx = Math.max(maxIdx, parseInt(m[1]));
-            }
-        });
-
-        newBoard.name = `${baseName} ${maxIdx > 0 ? maxIdx + 1 : 2}`;
-
-        if (addRecordedStep) {
-            const formatVal = (val) => {
-                if (units === 'metric') {
-                    return `${(val * 25.4).toFixed(0)} mm`;
-                }
-                const standardFraction = val === 0.75 ? ' (3/4")' : val === 0.5 ? ' (1/2")' : val === 0.25 ? ' (1/4")' : val === 0.375 ? ' (3/8")' : '';
-                return `${parseFloat(val.toFixed(4))}"${standardFraction}`;
-            };
-
-            const offsetStr = formatVal(cloneOffset);
-            let modeBtn = 'Local (Auto)';
-            if (cloneMode === 'worldX') modeBtn = 'World X';
-            else if (cloneMode === 'worldY') modeBtn = 'World Y';
-            else if (cloneMode === 'worldZ') modeBtn = 'World Z';
-
-            const btnName = cloneMode === 'local' ? 'Clone (Thin Axis)' : `Clone along ${cloneMode.replace('world', '')}`;
-
-            const stepText = `In the Inspector Panel for \`${selectedBoard.name}\`, under **Clone Component**:\n` +
-                `*   Click the **${modeBtn}** button.\n` +
-                `*   Set the **Offset** to \`${offsetStr}\`.\n` +
-                `Click **${btnName}** to create a clone named \`${newBoard.name}\`.`;
-
-            addRecordedStep(stepText);
-        }
-
-        pushHistory();
-        setBoards([...boards, newBoard]);
-        setSelectedItemIds([newId.toString()]);
+        cloneBoard(selectedBoard.id, { cloneMode, cloneOffset });
     };
 
     // Sticky banner — always rendered when constraint pick mode is active

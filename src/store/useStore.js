@@ -82,6 +82,37 @@ const useStore = create((set, get) => ({
   setIsOrtho: (v) =>
     set({ isOrtho: typeof v === "function" ? v(get().isOrtho) : v }),
 
+  // Whether scroll-wheel zoom pivots around the point under the cursor
+  // (modern CAD-style) vs. always zooming toward the fixed orbit target.
+  // Helpful for tall/large models where the target tends to sit near the
+  // floor, which otherwise drags the view back down on every zoom.
+  zoomToCursor: loadState("zoomToCursor", true),
+  setZoomToCursor: (v) => {
+    const next = typeof v === "function" ? v(get().zoomToCursor) : v;
+    set({ zoomToCursor: next });
+    updateActiveWorkspaceStorage((current) => ({
+      ...current,
+      zoomToCursor: next,
+    }));
+  },
+
+  // Whether the very first camera view (when no camera position has been
+  // saved yet — a fresh session or a freshly-opened project) centers on the
+  // workspace's actual content instead of the world origin/floor. Without
+  // this, the orbit pivot starts at floor level, so the floor sits at the
+  // vertical middle of the screen for anything tall until you manually pan.
+  // Only affects that initial framing — once you've navigated at all, your
+  // own camera position is saved and respected from then on.
+  autoCenterCamera: loadState("autoCenterCamera", true),
+  setAutoCenterCamera: (v) => {
+    const next = typeof v === "function" ? v(get().autoCenterCamera) : v;
+    set({ autoCenterCamera: next });
+    updateActiveWorkspaceStorage((current) => ({
+      ...current,
+      autoCenterCamera: next,
+    }));
+  },
+
   cameraState: loadState("cameraState", null),
   setCameraState: (v) => {
     const next = typeof v === "function" ? v(get().cameraState) : v;
@@ -453,6 +484,13 @@ const useStore = create((set, get) => ({
     set({
       showUserManualDialog:
         typeof v === "function" ? v(get().showUserManualDialog) : v,
+    }),
+
+  showKeyboardShortcutsDialog: false,
+  setShowKeyboardShortcutsDialog: (v) =>
+    set({
+      showKeyboardShortcutsDialog:
+        typeof v === "function" ? v(get().showKeyboardShortcutsDialog) : v,
     }),
 
   showAttributionDialog: false,
@@ -1076,28 +1114,42 @@ const useStore = create((set, get) => ({
   },
 
   handleUndo: () => {
-    const { history, boards, groups, constraints } = get();
+    const { history, boards, groups, constraints, selectedItemIds } = get();
     if (history.length === 0) return;
     const last = history[history.length - 1];
+    // Drop any selected ids that won't exist once boards/groups are restored
+    // (e.g. undoing a duplicate or new-board creation) — otherwise the
+    // Inspector keeps trying to read boards that no longer exist, which can
+    // produce NaN values and crash numeric inputs.
+    const validIds = new Set([
+      ...last.boards.map((b) => b.id.toString()),
+      ...Object.keys(last.groups || {}),
+    ]);
     set({
       redoHistory: [...get().redoHistory, { boards, groups, constraints }],
       history: history.slice(0, -1),
       boards: last.boards,
       groups: last.groups,
       constraints: last.constraints ?? {},
+      selectedItemIds: selectedItemIds.filter((id) => validIds.has(id)),
     });
   },
 
   handleRedo: () => {
-    const { redoHistory, boards, groups, constraints } = get();
+    const { redoHistory, boards, groups, constraints, selectedItemIds } = get();
     if (redoHistory.length === 0) return;
     const next = redoHistory[redoHistory.length - 1];
+    const validIds = new Set([
+      ...next.boards.map((b) => b.id.toString()),
+      ...Object.keys(next.groups || {}),
+    ]);
     set({
       history: [...get().history, { boards, groups, constraints }],
       redoHistory: redoHistory.slice(0, -1),
       boards: next.boards,
       groups: next.groups,
       constraints: next.constraints ?? {},
+      selectedItemIds: selectedItemIds.filter((id) => validIds.has(id)),
     });
   },
 

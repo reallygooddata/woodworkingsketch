@@ -33,6 +33,7 @@ import PrintDialog from "./components/dialogs/PrintDialog";
 import SavePromptDialog from "./components/dialogs/SavePromptDialog";
 import AttributionDialog from "./components/dialogs/AttributionDialog";
 import WelcomeDialog from "./components/dialogs/WelcomeDialog";
+import KeyboardShortcutsDialog from "./components/dialogs/KeyboardShortcutsDialog";
 import ErrorBoundary from "./components/layout/ErrorBoundary";
 import useStore from "./store/useStore";
 import { useAutosave } from "./hooks/useAutosave";
@@ -822,6 +823,7 @@ function WorkspaceApp() {
           <SavePromptDialog />
           <AttributionDialog />
           <WelcomeDialog />
+          <KeyboardShortcutsDialog />
         </div>
 
         {showSidebar && (

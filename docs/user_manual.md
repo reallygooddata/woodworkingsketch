@@ -38,7 +38,7 @@ Before diving into sawdust, let's look at the primary controls in your shop head
     *   **Dims Checkbox**: Toggles automatic dimensional labels showing raw board lengths directly inside the viewport.
     *   **C5R3 (Empty)**: *Reserved for future implementation.*
 
-*(Note: **📁 File** and **↺ Undo** remain located in the separate Left Card logo bar for global file saves, disk exports, and rapid 25-step undo history).*
+*(Note: **📁 File**, **↺ Undo**, and **⌨️ Shortcuts** remain located in the separate Left Card logo bar for global file saves, disk exports, rapid 25-step undo history, and a quick reference of every keyboard shortcut).*
 
 > [!TIP]
 > **Click & Explore!** There are no permanent mistakes in Sketch. We highly encourage you to click each button in the header, hover over tools, and experiment with options. Discovering features is half the fun!
@@ -85,6 +85,7 @@ Let’s build a simple **Step Stool** to learn the basics.
 *   Click the **World X** button.
 *   Set the **Offset** to `11"`.
 Click **Clone along X** to create a clone named `Stool Leg A 2`. Rename it to `Stool Leg B`
+*   *Shortcut: with a single board selected, pressing `Ctrl/Cmd + D` clones it instantly using whatever **Clone Component** mode and offset are currently set (defaults to its thin axis, right next to itself) — handy once you're cloning the same way repeatedly.*
 
 2.  Select `Stool Leg B`. In the Inspector Panel, click **+ Add Flush Alignment**.
 *   Click the **Right** face on `Stool Leg B`.
@@ -265,6 +266,12 @@ Use the quick-camera perspective buttons in the center:
 *   **Top View**: Ideal for aligning drawer depths, reveals, and checking cabinet carcass dimensions.
 *   **Side View**: Essential for verifying that backing sheets are flush or set in rabbets properly.
 
+### Navigating the 3D Viewport
+*   **Orbit**: Click and drag to spin the camera around your model.
+*   **Pan**: Right-click (or two-finger drag on a trackpad) to slide the view without rotating.
+*   **Zoom**: Scroll the mouse wheel to zoom in and out. By default, zoom follows your cursor — scroll while hovering near the top of a tall cabinet or board and the view zooms in right there instead of forcing you back down toward the floor. If you ever prefer the camera to always zoom toward a fixed center point instead, turn off **Zoom to Cursor** in the **Settings** panel.
+*   **Zoom-relative floor**: Every time you scroll to zoom, Sketch re-levels the pivot to the vertical center of your current model instead of the floor. The practical effect: the floor sinks toward the bottom of the screen as you zoom in, and rises back toward the middle as you zoom out — just like most other 3D tools — instead of always sitting fixed at dead-center. Orbiting and panning are never affected, only zooming. This is controlled by **Auto-Center Camera on Content** in the **Settings** panel.
+
 ---
 
 ## 🎬 8. Animating Doors & Drawers
@@ -332,6 +339,8 @@ Open the **Settings Panel** to configure your workspace behavior:
 *   **safety Clamping Safeguards**: Toggle automatic clamping, which prevents you from entering physically impossible values (like negative widths or 80-degree bevel cuts).
 *   **warnings Collision Badges**: Enable warning badges to alert you when boards are physically overlapping in space, reminding you to cut dados or slide them out of the way.
 *   **units Unit Switching**: Toggle between Inches (Imperial) and Millimeters (Metric) at any time. The database converts dimensions on the fly with no data loss!
+*   **camera Zoom to Cursor**: On by default — scroll-wheel zoom pivots around whatever's under your cursor instead of a fixed center point, which keeps tall or large models from "running away" toward the floor as you zoom in. Turn it off to always zoom toward the fixed orbit target instead.
+*   **camera Auto-Center Camera on Content**: On by default — every time you zoom in or out, re-levels the pivot to your model's vertical center instead of the floor, so the floor sinks toward the bottom of the screen as you zoom in rather than staying fixed in the middle. Only reacts to zooming, never to orbiting or panning.
 
 ---
 
@@ -339,6 +348,16 @@ Open the **Settings Panel** to configure your workspace behavior:
 
 *   **Why did I get a boards physically overlapping warning?**
     *   Sketch has **Collision Detection** enabled by default. If a `warning badge` appears at the top, it means two boards are physically occupying the same space. Use the **Flush** tool or **Nudge** arrows to guide one of the boards out of the way.
+*   **What keyboard shortcuts are available?**
+    *   Click **⌨️ Shortcuts** next to the Undo/Redo buttons in the top-left card for a full reference. The essentials:
+        *   `Ctrl/Cmd + Z` — Undo, `Ctrl/Cmd + Shift + Z` (or `Ctrl/Cmd + Y`) — Redo
+        *   `Delete` / `Backspace` — Delete the selected board(s) (asks to confirm first)
+        *   `Ctrl/Cmd + D` — Duplicate/clone the selected board(s)
+        *   `Ctrl/Cmd + A` — Select every board in the workspace
+        *   `Ctrl/Cmd + S` — Save the project
+        *   Arrow keys — Nudge the selected board(s) by one grid-snap increment (hold `Shift` for a bigger 10x step)
+        *   `Esc` — Deselect, or cancel whatever tool/mode is currently active
+        *   `G` / `R` — Switch the on-screen gizmo to Move / Rotate
 *   **How do I undo a mistake?**
     *   Click the **↺ Undo** button in the top menu or press `Ctrl + Z`. Sketch keeps a 25-step history of your session, so you can undo most mistakes when they happen. It's better to make mistakes here than at the table saw!
 *   **My input values keep changing slightly!**

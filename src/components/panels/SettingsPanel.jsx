@@ -21,6 +21,8 @@ const SettingsPanel = () => {
         lumberyardSnapEnabled, setLumberyardSnapEnabled,
         measurementStyle, setMeasurementStyle,
         gizmoMagneticSnap, setGizmoMagneticSnap,
+        zoomToCursor, setZoomToCursor,
+        autoCenterCamera, setAutoCenterCamera,
         setShowAttributionDialog,
         setShowUserManualDialog
     } = useStore();
@@ -125,6 +127,22 @@ const SettingsPanel = () => {
                     Magnetic Alignment Snap
                 </label>
                 <p className="hint" style={hintStyle}>While dragging the Transform gizmo, catches and holds onto nearby aligned faces (same highlight shown while dragging). Turn off for unassisted free movement.</p>
+            </div>
+
+            <div className="inspector-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <label style={checkboxLabelStyle}>
+                    <input type="checkbox" checked={zoomToCursor} onChange={(e) => setZoomToCursor(e.target.checked)} style={checkboxInputStyle} />
+                    Zoom to Cursor
+                </label>
+                <p className="hint" style={hintStyle}>Scroll-wheel zoom pivots around the point under your cursor instead of the fixed orbit target. Recommended for tall or large models.</p>
+            </div>
+
+            <div className="inspector-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <label style={checkboxLabelStyle}>
+                    <input type="checkbox" checked={autoCenterCamera} onChange={(e) => setAutoCenterCamera(e.target.checked)} style={checkboxInputStyle} />
+                    Auto-Center Camera on Content
+                </label>
+                <p className="hint" style={hintStyle}>Every time you zoom in or out, re-levels the pivot to the vertical center of your current model, so the floor sinks toward the bottom of the screen as you zoom in instead of sitting fixed at the middle. Only reacts to zooming — orbiting and panning are never affected.</p>
             </div>
 
             <div className="inspector-card">

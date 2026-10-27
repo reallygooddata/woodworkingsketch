@@ -18,7 +18,11 @@ const NumericInput = ({ value, onChange, ...props }) => {
 
     // Sync with external value changes (e.g., store updates, undo/redo) only when not focused.
     // Done during render as recommended by React docs to avoid post-render effects.
-    if (value !== prevValue) {
+    // NaN !== NaN is always true, so guard against it explicitly — otherwise a
+    // transiently-NaN value (e.g. a stale/dangling selection) would re-trigger
+    // this branch on every render and blow React's re-render limit.
+    const valueChanged = Number.isNaN(value) && Number.isNaN(prevValue) ? false : value !== prevValue;
+    if (valueChanged) {
         setPrevValue(value);
         if (!isFocused) {
             setLocalVal(value !== undefined && value !== null ? value.toString() : '');

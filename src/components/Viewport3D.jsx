@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { PerspectiveCamera, OrthographicCamera, Html } from '@react-three/drei';
 import useStore from '../store/useStore';
+import { getGridStep } from '../utils/units';
 
 // Extracted Components
 import { GizmoControls } from './GizmoControls';
@@ -73,7 +74,7 @@ export default function Viewport3D() {
       
       const isInput = e.target.closest('input, textarea, select');
       if (!isInput) {
-        if (e.key.toLowerCase() === 'd') {
+        if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
           if (e.type === 'keydown') {
             const wasPressed = useStore.getState().dKeyPressed;
             if (!wasPressed) {
@@ -122,14 +123,48 @@ export default function Viewport3D() {
           state.setDefinePlaneActive(false);
           acted = true;
         }
-        if (acted) e.preventDefault();
+        if (acted) {
+          e.preventDefault();
+        } else if (state.selectedItemIds.length > 0) {
+          state.setSelectedItemIds([]);
+        }
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
-        const { selectedMeasurementId, removeMeasurement, setSelectedMeasurementId } = useStore.getState();
+        const {
+          selectedMeasurementId, removeMeasurement, setSelectedMeasurementId,
+          selectedItemIds, handleComponentDelete, handleMultiDelete
+        } = useStore.getState();
         if (selectedMeasurementId) {
           e.preventDefault();
           removeMeasurement(selectedMeasurementId);
           setSelectedMeasurementId(null);
+        } else if (selectedItemIds.length === 1) {
+          e.preventDefault();
+          handleComponentDelete();
+        } else if (selectedItemIds.length > 1) {
+          e.preventDefault();
+          handleMultiDelete();
+        }
+      }
+
+      // Arrow keys nudge the selected board(s) along the ground plane
+      // (Left/Right = X, Up/Down = Z) by one grid-snap increment; hold
+      // Shift for a 10x step. `e.repeat` (held key) skips pushing a new
+      // history entry so holding the key is a single undo step.
+      if (!isInput && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && e.type === 'keydown' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const state = useStore.getState();
+        if (state.selectedItemIds.length > 0) {
+          e.preventDefault();
+          const step = getGridStep(state.gridSnap, state.units) || (state.units === 'metric' ? 1 / 25.4 : 0.125);
+          const amount = e.shiftKey ? step * 10 : step;
+          const deltas = {
+            ArrowLeft: [-amount, 0, 0],
+            ArrowRight: [amount, 0, 0],
+            ArrowUp: [0, 0, -amount],
+            ArrowDown: [0, 0, amount],
+          };
+          const [dx, dy, dz] = deltas[e.key];
+          state.nudgeSelected(dx, dy, dz, { recordHistory: !e.repeat });
         }
       }
     };
