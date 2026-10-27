@@ -20,6 +20,7 @@ const SettingsPanel = () => {
         workspaceLayout, setWorkspaceLayout,
         lumberyardSnapEnabled, setLumberyardSnapEnabled,
         measurementStyle, setMeasurementStyle,
+        gizmoMagneticSnap, setGizmoMagneticSnap,
         setShowAttributionDialog,
         setShowUserManualDialog
     } = useStore();
@@ -116,6 +117,14 @@ const SettingsPanel = () => {
                     )}
                 </select>
                 <p className="hint" style={hintStyle}>Controls the bounding lock when nudging components.</p>
+            </div>
+
+            <div className="inspector-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <label style={checkboxLabelStyle}>
+                    <input type="checkbox" checked={gizmoMagneticSnap} onChange={(e) => setGizmoMagneticSnap(e.target.checked)} style={checkboxInputStyle} />
+                    Magnetic Alignment Snap
+                </label>
+                <p className="hint" style={hintStyle}>While dragging the Transform gizmo, catches and holds onto nearby aligned faces (same highlight shown while dragging). Turn off for unassisted free movement.</p>
             </div>
 
             <div className="inspector-card">

@@ -678,11 +678,31 @@ const useStore = create((set, get) => ({
       gizmoEnabled: next,
     }));
   },
+  // Whether dragging the single-board Transform gizmo magnetically snaps
+  // onto other boards' aligned faces (same highlight shown by
+  // LiveDistanceOverlay). Can be turned off for free-floating movement.
+  gizmoMagneticSnap: loadState("gizmoMagneticSnap", true),
+  setGizmoMagneticSnap: (v) => {
+    const next = typeof v === "function" ? v(get().gizmoMagneticSnap) : v;
+    set({ gizmoMagneticSnap: next });
+    updateActiveWorkspaceStorage((current) => ({
+      ...current,
+      gizmoMagneticSnap: next,
+    }));
+  },
   // True only while the user is actively dragging the gizmo handle — used to
   // suspend OrbitControls so orbiting doesn't fight the drag.
   isGizmoDragging: false,
   setIsGizmoDragging: (v) =>
     set({ isGizmoDragging: typeof v === "function" ? v(get().isGizmoDragging) : v }),
+
+  // IDs of boards currently being repositioned by ANY drag mechanism (the
+  // Transform gizmo, or the hold-D smart-snap drag). Read by
+  // LiveDistanceOverlay to show live gaps to the nearest neighboring boards
+  // without requiring a multi-selection.
+  liveDragBoardIds: [],
+  setLiveDragBoardIds: (v) =>
+    set({ liveDragBoardIds: typeof v === "function" ? v(get().liveDragBoardIds) : v }),
 
   // Persisted custom measurements
   measurements: loadState("measurements", []),

@@ -188,8 +188,11 @@ All rotations are done in simple (settable) degree increments (like 5° or 45° 
 Instead of typing coordinates, you can drag the selection directly in the 3D viewport with an on-screen gizmo:
 *   Select a board, assembly, or multi-selection, then look for the **Transform** control at the top of the **Inspector** panel.
 *   Click **Move** (or press **G**) to drag the selection with translate arrows, or **Rotate** (or press **R**) to spin it with rotate rings. Click **Off** to hide the gizmo.
-*   The gizmo respects your current **Grid Snap** setting for both moving and rotating, and a single drag still only takes one step of Undo.
+*   The gizmo respects your current **Grid Snap** setting while moving. Rotating with the gizmo is always free/continuous (not locked to a grid) — but a live degree readout appears above the gizmo while you rotate, and it lights up bright green whenever you pass within 1° of a "standard" angle (0°, 45°, 90°, 135°...) so you can feel where those common angles are without being forced onto them. A single drag still only takes one step of Undo.
 *   Rotating a single board spins it around its own pivot point (its center, or a custom pivot you've set). Rotating a multi-selection or an assembly spins every member together around the shared center of the selection, exactly like the degree-increment buttons above.
+*   While you're dragging a single board — with the gizmo, or by holding **D** and dragging it directly — dashed guide lines and live distance labels appear automatically to whichever boards are nearest it in each direction, so you can see how far apart things are without selecting anything else.
+*   The instant any face of the board you're dragging lines up with a face of another board — same height, same depth, same edge, even if the two boards aren't touching — that matching edge lights up bright green on both boards, so you always know when something is truly aligned.
+*   Dragging a single board with the gizmo **magnetically catches and holds** onto those aligned positions, the same way holding **D** and dragging already does, so it's easy to land exactly on alignment without pixel-perfect precision. If you'd rather move completely freely, turn off **Magnetic Alignment Snap** in the **Settings** panel.
 
 ---
 
@@ -205,6 +208,9 @@ To make modeling fast and parametric, Sketch implements a powerful **Smart Const
 
 ### Why Constraints Are Game-Changers:
 Imagine you have designed a full chest of drawers. If you select the whole assembly or an entire sub-assembly, and click **Glue Assembly**, then you can move the whole assembly by moving the position of just one board.
+
+### Distance Between Boards
+Select any two boards (click one, then Shift-click the other) and the Inspector panel shows a **Distance Between Boards** card with the gap on X, Y, and Z between their nearest faces — a positive number means they're separated by that much, a negative number means they overlap by that much. Type a new value on whichever axis matters (usually only one axis will show a meaningful gap) and the first board you selected moves to match it exactly; the second board you selected stays put. This is the fastest way to say "move this board 2 inches away from that one" without doing any coordinate math yourself.
 
 ---
 

@@ -494,7 +494,7 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
     const onUp = (e) => {
       try { gl.domElement.releasePointerCapture(draggingInfo.pointerId); } catch (_) {}
 
-      const { pushHistory } = useStore.getState();
+      const { pushHistory, setLiveDragBoardIds } = useStore.getState();
       const currentPos = b.position;
       const initialPos = draggingInfo.initialPosition;
       const moved = Math.abs(currentPos[0] - initialPos[0]) > 0.001 ||
@@ -505,6 +505,7 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
         pushHistory();
       }
 
+      setLiveDragBoardIds([]);
       setDraggingInfo(null);
       setSnappedAxes({ x: false, y: false, z: false });
     };
@@ -523,6 +524,7 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
     if (!dKeyPressed) return;
     e.stopPropagation();
     gl.domElement.setPointerCapture(e.pointerId);
+    useStore.getState().setLiveDragBoardIds([b.id.toString()]);
 
     const dragPlane = new THREE.Plane();
     const normal = new THREE.Vector3();

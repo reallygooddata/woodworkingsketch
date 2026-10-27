@@ -663,6 +663,52 @@ export const createBoardSlice = (set, get) => ({
       return b;
     }));
   },
+  // ─── Set the gap (or overlap, if negative) between two boards along one   ───
+  // axis by moving ONLY `movingBoardId`, keeping `referenceBoardId` fixed.
+  // Mirrors updateVector's propagateMove-based delta application, but the
+  // delta is derived from a target *distance between boards* rather than an
+  // absolute coordinate.
+  setBoardGapOnAxis: (movingBoardId, referenceBoardId, axis, desiredGap) => {
+    const {
+      boards,
+      constraints,
+      pushHistory,
+      setBoards
+    } = get();
+    const movingIdStr = movingBoardId.toString();
+    const moving = boards.find(b => b.id.toString() === movingIdStr);
+    const reference = boards.find(b => b.id.toString() === referenceBoardId.toString());
+    if (!moving || !reference) return;
+
+    const movingHalf = moving.size[axis] / 2;
+    const refHalf = reference.size[axis] / 2;
+    const refMin = reference.position[axis] - refHalf;
+    const refMax = reference.position[axis] + refHalf;
+
+    // Keep the board on whichever side of the reference it's currently on.
+    const movingIsBelow = moving.position[axis] <= reference.position[axis];
+    const newCenter = movingIsBelow
+      ? (refMin - desiredGap - movingHalf)
+      : (refMax + desiredGap + movingHalf);
+
+    const delta = newCenter - moving.position[axis];
+    if (Math.abs(delta) < 1e-9) return;
+    pushHistory();
+
+    const deltaVec = [0, 0, 0];
+    deltaVec[axis] = delta;
+    const moveMap = propagateMove([movingIdStr], deltaVec, constraints);
+    setBoards(boards.map(b => {
+      const d = moveMap.get(b.id.toString());
+      if (d) {
+        return {
+          ...b,
+          position: [b.position[0] + d[0], b.position[1] + d[1], b.position[2] + d[2]]
+        };
+      }
+      return b;
+    }));
+  },
   handleDragStart: (e, id, type) => {
     const {
       selectedItemIds

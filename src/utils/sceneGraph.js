@@ -141,3 +141,218 @@ export const computeSelectionAnchor = (boardList) => {
     );
     return [sum[0] / boardList.length, sum[1] / boardList.length, sum[2] / boardList.length];
 };
+
+import { getRotatedBoardAABB } from './constraintSolver';
+
+/**
+ * Rotation-aware world-space bounds of a single board — min/max per axis,
+ * accounting for `orientation` (and `pivot`) the same way computeWorldAABB
+ * does for a list of boards. Exact for boards rotated by multiples of 90°
+ * (e.g. a "vertical" stud rotated onto the Y axis — the common case for
+ * woodworking framing); for arbitrary tilts this is the bounding envelope,
+ * same precision tradeoff the rest of the app already makes elsewhere.
+ * @param {Object} board
+ * @returns {{min: number[], max: number[]}}
+ */
+const worldBoundsOf = (board) => {
+    const box = getRotatedBoardAABB(board);
+    return {
+        min: [box.min.x, box.min.y, box.min.z],
+        max: [box.max.x, box.max.y, box.max.z],
+    };
+};
+
+/**
+ * Find, for a single board being dragged, the nearest board directly facing
+ * it in each of the 6 axis-directions (+X/-X/+Y/-Y/+Z/-Z) — i.e. the board
+ * whose cross-section overlaps the dragged board's on the other two axes,
+ * with the smallest gap along the axis in question. Used to show live
+ * "how far apart" readouts while dragging, without requiring a selection.
+ *
+ * Rotation-aware: uses each board's true (rotated) world-space extents, so
+ * this works correctly for a vertical board being lined up against a
+ * horizontal one, not just axis-aligned boards.
+ *
+ * @param {Object} dragged - The board currently being moved
+ * @param {Array} others - All other boards to check against
+ * @returns {Array<{axis: number, direction: 1|-1, gap: number, neighbor: Object, start: number[], end: number[]}>}
+ */
+export const findNearestNeighbors = (dragged, others) => {
+    if (!dragged || dragged.shape === 'plane') return [];
+    const { min: dMin, max: dMax } = worldBoundsOf(dragged);
+
+    // key: `${axis}_${direction}` -> best match so far
+    const best = {};
+
+    others.forEach(o => {
+        if (!o || o.shape === 'plane' || o.id === dragged.id) return;
+        const { min: oMin, max: oMax } = worldBoundsOf(o);
+
+        for (let axis = 0; axis < 3; axis++) {
+            const [oa1, oa2] = [0, 1, 2].filter(a => a !== axis);
+            const crossOverlaps =
+                dMax[oa1] >= oMin[oa1] - 1e-6 && dMin[oa1] <= oMax[oa1] + 1e-6 &&
+                dMax[oa2] >= oMin[oa2] - 1e-6 && dMin[oa2] <= oMax[oa2] + 1e-6;
+            if (!crossOverlaps) continue;
+
+            let direction = null, gap = null;
+            if (oMin[axis] >= dMax[axis] - 1e-6) {
+                direction = 1;
+                gap = Math.max(0, oMin[axis] - dMax[axis]);
+            } else if (oMax[axis] <= dMin[axis] + 1e-6) {
+                direction = -1;
+                gap = Math.max(0, dMin[axis] - oMax[axis]);
+            } else {
+                continue; // overlapping on this axis — not a clean facing neighbor
+            }
+
+            const key = `${axis}_${direction}`;
+            if (!best[key] || gap < best[key].gap) {
+                const overlapMin = [Math.max(dMin[oa1], oMin[oa1]), Math.max(dMin[oa2], oMin[oa2])];
+                const overlapMax = [Math.min(dMax[oa1], oMax[oa1]), Math.min(dMax[oa2], oMax[oa2])];
+                const mid = [(overlapMin[0] + overlapMax[0]) / 2, (overlapMin[1] + overlapMax[1]) / 2];
+
+                const start = [0, 0, 0];
+                const end = [0, 0, 0];
+                start[oa1] = end[oa1] = mid[0];
+                start[oa2] = end[oa2] = mid[1];
+                start[axis] = direction === 1 ? dMax[axis] : dMin[axis];
+                end[axis] = direction === 1 ? oMin[axis] : oMax[axis];
+
+                best[key] = { axis, direction, gap, neighbor: o, start, end };
+            }
+        }
+    });
+
+    return Object.values(best);
+};
+
+// Tolerance (inches) used to decide two face values are "the same" — matches
+// the existing flush-detection tolerance used by analyzeTouchConnection.
+export const ALIGNMENT_EPSILON = 0.05;
+
+/**
+ * The 4 world-space corners of one axis-aligned face of a board (e.g. its
+ * top face, or its +X face), as a closed rectangle loop suitable for a line
+ * or filled plane. `value` is the world coordinate of the face along `axis`;
+ * the board's true (rotation-aware) extents on the other two axes determine
+ * the rectangle, so a rotated/vertical board highlights correctly too.
+ * @param {Object} board
+ * @param {number} axis - 0=X, 1=Y, 2=Z
+ * @param {number} value - world coordinate of the face along `axis`
+ * @returns {number[][]} 4 corner points, in winding order
+ */
+export const boardFaceRect = (board, axis, value) => {
+    const [oa1, oa2] = [0, 1, 2].filter(a => a !== axis);
+    const { min, max } = worldBoundsOf(board);
+    const h1 = (max[oa1] - min[oa1]) / 2;
+    const h2 = (max[oa2] - min[oa2]) / 2;
+    const c1 = (max[oa1] + min[oa1]) / 2;
+    const c2 = (max[oa2] + min[oa2]) / 2;
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([s1, s2]) => {
+        const p = [0, 0, 0];
+        p[axis] = value;
+        p[oa1] = c1 + s1 * h1;
+        p[oa2] = c2 + s2 * h2;
+        return p;
+    });
+};
+
+/**
+ * Find every (axis, face-of-dragged, face-of-other) pair whose world
+ * coordinate matches within ALIGNMENT_EPSILON — i.e. a min/center/max face
+ * of the dragged board lines up with a min/center/max face of another board,
+ * whether or not the two boards are actually touching or facing each other.
+ * This is the "smart guide" check (like Figma/PowerPoint alignment guides)
+ * used to highlight edges the moment two boards line up while dragging.
+ * Rotation-aware — a vertical board's true top/bottom/side faces are used,
+ * not its unrotated size.
+ *
+ * @param {Object} dragged
+ * @param {Array} others
+ * @param {number} epsilon
+ * @returns {Array<{axis: number, value: number, neighbor: Object}>}
+ */
+export const findAlignments = (dragged, others, epsilon = ALIGNMENT_EPSILON) => {
+    if (!dragged || dragged.shape === 'plane') return [];
+
+    const facesOf = (board, axis) => {
+        const { min, max } = worldBoundsOf(board);
+        return [min[axis], (min[axis] + max[axis]) / 2, max[axis]];
+    };
+
+    const results = [];
+    const seen = new Set();
+    for (let axis = 0; axis < 3; axis++) {
+        const dFaces = facesOf(dragged, axis);
+        others.forEach(o => {
+            if (!o || o.shape === 'plane' || o.id === dragged.id) return;
+            const oFaces = facesOf(o, axis);
+            dFaces.forEach(dVal => {
+                oFaces.forEach(oVal => {
+                    if (Math.abs(dVal - oVal) <= epsilon) {
+                        const key = `${axis}_${o.id}`;
+                        if (seen.has(key)) return; // one highlight per axis/neighbor is enough
+                        seen.add(key);
+                        results.push({ axis, value: (dVal + oVal) / 2, neighbor: o });
+                    }
+                });
+            });
+        });
+    }
+    return results;
+};
+
+// Magnetic pull radius (inches) for snap-to-alignment while dragging the
+// Transform gizmo — intentionally larger than ALIGNMENT_EPSILON so the drag
+// actually "catches" instead of requiring pixel-perfect precision.
+export const ALIGNMENT_SNAP_RADIUS = 0.6;
+
+/**
+ * Given a board (for its size/orientation/pivot) and a candidate (not-yet-
+ * committed) world position, find the nearest aligned position within
+ * ALIGNMENT_SNAP_RADIUS on each axis independently — i.e. magnetic snap-to-
+ * alignment, the drag-time counterpart to findAlignments(). Each axis may
+ * snap to a different neighboring board, or not snap at all if nothing is
+ * within range. Rotation-aware, so a vertical board snaps by its true edges.
+ *
+ * @param {Object} board - the board being moved (used for its size/orientation/pivot)
+ * @param {number[]} candidatePosition - [x, y, z] position to snap from
+ * @param {Array} others - boards to snap against (should exclude the board
+ *   being moved and any of its glue-connected companions)
+ * @param {number} radius
+ * @returns {number[]} the (possibly) snapped [x, y, z] position
+ */
+export const computeAlignmentSnap = (board, candidatePosition, others, radius = ALIGNMENT_SNAP_RADIUS) => {
+    // Bounds of the dragged board's own shape, centered at its CURRENT
+    // position, so we can re-derive its half-extents at the candidate
+    // position without re-rotating anything (orientation doesn't change
+    // during a translate drag).
+    const ownBounds = worldBoundsOf(board);
+    const halfExtent = [0, 1, 2].map(i => (ownBounds.max[i] - ownBounds.min[i]) / 2);
+    const ownCenterOffset = [0, 1, 2].map(i => (ownBounds.max[i] + ownBounds.min[i]) / 2 - board.position[i]);
+
+    const snapped = [...candidatePosition];
+    for (let axis = 0; axis < 3; axis++) {
+        const myCenter = candidatePosition[axis] + ownCenterOffset[axis];
+        const myFaces = [myCenter - halfExtent[axis], myCenter, myCenter + halfExtent[axis]];
+        let bestAdjustment = null;
+        others.forEach(o => {
+            if (!o || o.shape === 'plane') return;
+            const { min: oMin, max: oMax } = worldBoundsOf(o);
+            const oFaces = [oMin[axis], (oMin[axis] + oMax[axis]) / 2, oMax[axis]];
+            myFaces.forEach(myVal => {
+                oFaces.forEach(oVal => {
+                    const adjustment = oVal - myVal;
+                    if (Math.abs(adjustment) <= radius &&
+                        (bestAdjustment === null || Math.abs(adjustment) < Math.abs(bestAdjustment))) {
+                        bestAdjustment = adjustment;
+                    }
+                });
+            });
+        });
+        if (bestAdjustment !== null) snapped[axis] = candidatePosition[axis] + bestAdjustment;
+    }
+    return snapped;
+};
+

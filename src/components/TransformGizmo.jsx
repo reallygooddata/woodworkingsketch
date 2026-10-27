@@ -1,8 +1,8 @@
-import React, { useCallback, useMemo, useRef } from 'react';
-import { TransformControls } from '@react-three/drei';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { TransformControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import useStore from '../store/useStore';
-import { collectChildBoards, computeSelectionAnchor } from '../utils/sceneGraph';
+import { collectChildBoards, computeSelectionAnchor, computeAlignmentSnap } from '../utils/sceneGraph';
 import { propagateMove } from '../utils/constraintSolver';
 import { getGridStep } from '../utils/units';
 
@@ -11,7 +11,12 @@ import { getGridStep } from '../utils/units';
 // board flying off into unusable coordinates.
 const POSITION_LIMIT = 5000;
 const clampPos = (v) => Math.min(POSITION_LIMIT, Math.max(-POSITION_LIMIT, v));
-const ROTATE_SNAP_DEGREES = 5;
+// Rotation is free (no forced snapping) — but the live angle readout lights
+// up whenever it passes within this tolerance of a "standard" angle
+// (0°, 45°, 90°, 135°...), so you can feel/see when you've hit one without
+// being locked to it.
+const STANDARD_ANGLE_STEP = 45;
+const STANDARD_ANGLE_TOLERANCE = 1; // degrees
 
 /**
  * On-screen move/rotate gizmo for the current selection.
@@ -28,6 +33,7 @@ export default function TransformGizmo() {
   const gridSnap = useStore(s => s.gridSnap);
   const units = useStore(s => s.units);
   const setIsGizmoDragging = useStore(s => s.setIsGizmoDragging);
+  const setLiveDragBoardIds = useStore(s => s.setLiveDragBoardIds);
 
   // Suppress the gizmo while another exclusive viewport tool is active so it
   // doesn't steal clicks meant for face-picking (measure, pivot, constraints...).
@@ -90,12 +96,15 @@ export default function TransformGizmo() {
 
   const snapStep = getGridStep(gridSnap, units); // inches; 0 means "off"
   const translationSnap = snapStep > 0 ? snapStep : null;
-  const rotationSnap = snapStep > 0 ? THREE.MathUtils.degToRad(ROTATE_SNAP_DEGREES) : null;
+
+  const controlsRef = useRef(null);
+  const [rotationAngleDeg, setRotationAngleDeg] = useState(null);
 
   const handleMouseDown = useCallback(() => {
     const proxy = proxyRef.current;
     if (!proxy || !placement) return;
     setIsGizmoDragging(true);
+    setLiveDragBoardIds(placement.activeBoardIds);
     const state = useStore.getState();
     state.pushHistory();
 
@@ -120,8 +129,9 @@ export default function TransformGizmo() {
       snapshots,
       mode: gizmoMode,
       isSingleBoardMode: placement.isSingleBoardMode,
+      draggedBoardId: placement.activeBoardIds[0],
     };
-  }, [placement, gizmoMode, setIsGizmoDragging]);
+  }, [placement, gizmoMode, setIsGizmoDragging, setLiveDragBoardIds]);
 
   const handleObjectChange = useCallback(() => {
     const drag = dragRef.current;
@@ -130,6 +140,30 @@ export default function TransformGizmo() {
     const state = useStore.getState();
 
     if (drag.mode === 'translate') {
+      // Magnetic snap-to-alignment: pull the dragged board (and anything
+      // glued to it) onto nearby aligned faces, mirroring the highlight
+      // shown by LiveDistanceOverlay. Single-board drags only, and only
+      // when the user hasn't turned it off in Settings.
+      if (drag.isSingleBoardMode && state.gizmoMagneticSnap) {
+        const draggedSnap = drag.snapshots.get(drag.draggedBoardId);
+        const draggedBoard = state.boards.find(b => b.id.toString() === drag.draggedBoardId);
+        if (draggedSnap && draggedBoard) {
+          const rawDelta = proxy.position.clone().sub(drag.anchor);
+          const candidatePos = [
+            draggedSnap.pos.x + rawDelta.x,
+            draggedSnap.pos.y + rawDelta.y,
+            draggedSnap.pos.z + rawDelta.z,
+          ];
+          const others = state.boards.filter(b => !drag.snapshots.has(b.id.toString()));
+          const snappedPos = computeAlignmentSnap(draggedBoard, candidatePos, others);
+          proxy.position.set(
+            proxy.position.x + (snappedPos[0] - candidatePos[0]),
+            proxy.position.y + (snappedPos[1] - candidatePos[1]),
+            proxy.position.z + (snappedPos[2] - candidatePos[2]),
+          );
+        }
+      }
+
       const delta = proxy.position.clone().sub(drag.anchor);
       state.setBoards(state.boards.map(b => {
         const snap = drag.snapshots.get(b.id.toString());
@@ -145,6 +179,9 @@ export default function TransformGizmo() {
       }));
     } else {
       const qCurrent = proxy.quaternion;
+      if (controlsRef.current) {
+        setRotationAngleDeg(THREE.MathUtils.radToDeg(controlsRef.current.rotationAngle));
+      }
       state.setBoards(state.boards.map(b => {
         const snap = drag.snapshots.get(b.id.toString());
         if (!snap) return b;
@@ -172,8 +209,10 @@ export default function TransformGizmo() {
 
   const handleMouseUp = useCallback(() => {
     setIsGizmoDragging(false);
+    setLiveDragBoardIds([]);
+    setRotationAngleDeg(null);
     dragRef.current = null;
-  }, [setIsGizmoDragging]);
+  }, [setIsGizmoDragging, setLiveDragBoardIds]);
 
   if (!placement) return null;
 
@@ -188,11 +227,33 @@ export default function TransformGizmo() {
         space={space}
         size={0.85}
         translationSnap={gizmoMode === 'translate' ? translationSnap : null}
-        rotationSnap={gizmoMode === 'rotate' ? rotationSnap : null}
         onMouseDown={handleMouseDown}
         onObjectChange={handleObjectChange}
         onMouseUp={handleMouseUp}
+        ref={controlsRef}
       />
+      {rotationAngleDeg !== null && (() => {
+        const nearestStandard = Math.round(rotationAngleDeg / STANDARD_ANGLE_STEP) * STANDARD_ANGLE_STEP;
+        const atStandardAngle = Math.abs(rotationAngleDeg - nearestStandard) <= STANDARD_ANGLE_TOLERANCE;
+        return (
+          <Html position={placement.anchor} center style={{ pointerEvents: 'none' }}>
+            <div style={{
+              transform: `translateY(-48px) scale(${atStandardAngle ? 1.15 : 1})`,
+              transition: 'transform 80ms ease-out, background 80ms, color 80ms, border-color 80ms',
+              background: atStandardAngle ? 'rgba(34, 197, 94, 0.95)' : 'rgba(20, 20, 22, 0.85)',
+              color: atStandardAngle ? '#0a0a0a' : '#ffffff',
+              fontWeight: 700,
+              fontSize: '14px',
+              padding: '3px 10px',
+              borderRadius: '6px',
+              border: `1px solid ${atStandardAngle ? '#22c55e' : 'rgba(255,255,255,0.25)'}`,
+              whiteSpace: 'nowrap',
+            }}>
+              {rotationAngleDeg >= 0 ? '+' : ''}{rotationAngleDeg.toFixed(1)}°{atStandardAngle ? ` (${nearestStandard}°)` : ''}
+            </div>
+          </Html>
+        );
+      })()}
     </group>
   );
 }

@@ -19,6 +19,7 @@ import { MeasureDragHandler } from './MeasureDragHandler';
 import BuilderPreviewRenderer from './BuilderPreviewRenderer';
 import { MiterCutVisualizer } from './MiterCutVisualizer';
 import TransformGizmo from './TransformGizmo';
+import { LiveDistanceOverlay } from './LiveDistanceOverlay';
 
 // ── Custom Pivot Snapping Preview ───────────────────────────────────────────
 function PivotSnapPreview() {
@@ -232,6 +233,7 @@ export default function Viewport3D() {
         <MiterCutVisualizer />
         <BuilderPreviewRenderer />
         <TransformGizmo />
+        <LiveDistanceOverlay />
       </Canvas>
     </div>
   );

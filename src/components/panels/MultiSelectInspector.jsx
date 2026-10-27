@@ -21,7 +21,8 @@ const MultiSelectInspector = () => {
         setBoards, pushHistory, dropSelectionToFloor, handleMultiDelete,
         constraintTargetMode, setConstraintTargetMode,
         applySmartFasteners, removeSmartFasteners,
-        updateSelectedBoards, units, addRecordedStep
+        updateSelectedBoards, units, addRecordedStep,
+        setBoardGapOnAxis
     } = useStore();
 
     // Collect all boards that are part of this selection (direct boards + children of selected groups)
@@ -36,6 +37,18 @@ const MultiSelectInspector = () => {
     });
 
     const selBoards = Array.from(selectedBoardSet).filter(b => b.shape !== 'plane');
+
+    // Signed gap between two boards' facing extents on one world axis.
+    // Positive = separated by that much; negative = overlapping by that much.
+    const gapOnAxis = (axis) => {
+        if (selBoards.length !== 2) return 0;
+        const [a, b] = selBoards;
+        const aMin = a.position[axis] - a.size[axis] / 2;
+        const aMax = a.position[axis] + a.size[axis] / 2;
+        const bMin = b.position[axis] - b.size[axis] / 2;
+        const bMax = b.position[axis] + b.size[axis] / 2;
+        return Math.max(bMin - aMax, aMin - bMax);
+    };
 
     // Compute bulk states
     const allSolid = selBoards.length > 0 && selBoards.every(b => b.lumberType === 'solid');
@@ -233,6 +246,34 @@ const MultiSelectInspector = () => {
                 <span style={{ opacity: 0.6, fontSize: '0.85rem' }}>{selectedItemIds.length} Items Selected</span>
             </div>
             <GizmoModeToggle />
+            {selBoards.length === 2 && (
+                <div className="inspector-card">
+                    <h4>Distance Between Boards ({units === 'metric' ? 'mm' : 'in'})</h4>
+                    <div className="vec3-inputs">
+                        {[0, 1, 2].map(axis => {
+                            const gap = gapOnAxis(axis);
+                            const label = ['X', 'Y', 'Z'][axis];
+                            const bg = ['rgba(255, 60, 60, 0.15)', 'rgba(60, 200, 90, 0.15)', 'rgba(60, 150, 255, 0.15)'][axis];
+                            return (
+                                <div key={axis} style={{ backgroundColor: bg }}>
+                                    {label}
+                                    <NumericInput
+                                        step={units === 'metric' ? '1' : '0.125'}
+                                        value={units === 'metric' ? fmt4(gap * 25.4) : fmt4(gap)}
+                                        onChange={val => setBoardGapOnAxis(
+                                            selBoards[0].id, selBoards[1].id, axis,
+                                            units === 'metric' ? val / 25.4 : val
+                                        )}
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="hint" style={{ marginTop: '6px', fontSize: '0.75rem' }}>
+                        Positive = gap between the boards, negative = overlap. Editing an axis moves <strong>{selBoards[0].name}</strong> — <strong>{selBoards[1].name}</strong> stays fixed.
+                    </div>
+                </div>
+            )}
             <div className="inspector-section">
                 <h4>Bounding Box (in)</h4>
                 <p className="hint" style={{ marginTop: '2px', marginBottom: '6px' }}>
