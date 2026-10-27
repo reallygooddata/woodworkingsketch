@@ -184,6 +184,13 @@ Luceysketch uses simple woodworking actions to rotate your boards:
 
 All rotations are done in simple (settable) degree increments (like 5° or 45° or 90°), and you can instantly flip a board 180° with a single click in the **Inspector** panel.
 
+### Moving & Rotating with the Mouse
+Instead of typing coordinates, you can drag the selection directly in the 3D viewport with an on-screen gizmo:
+*   Select a board, assembly, or multi-selection, then look for the **Transform** control at the top of the **Inspector** panel.
+*   Click **Move** (or press **G**) to drag the selection with translate arrows, or **Rotate** (or press **R**) to spin it with rotate rings. Click **Off** to hide the gizmo.
+*   The gizmo respects your current **Grid Snap** setting for both moving and rotating, and a single drag still only takes one step of Undo.
+*   Rotating a single board spins it around its own pivot point (its center, or a custom pivot you've set). Rotating a multi-selection or an assembly spins every member together around the shared center of the selection, exactly like the degree-increment buttons above.
+
 ---
 
 ## 🔗 5. Smart Constraints: Flush & Glue

@@ -18,6 +18,7 @@ import { MeasureSnapPreview } from './MeasureSnapPreview';
 import { MeasureDragHandler } from './MeasureDragHandler';
 import BuilderPreviewRenderer from './BuilderPreviewRenderer';
 import { MiterCutVisualizer } from './MiterCutVisualizer';
+import TransformGizmo from './TransformGizmo';
 
 // ── Custom Pivot Snapping Preview ───────────────────────────────────────────
 function PivotSnapPreview() {
@@ -80,6 +81,17 @@ export default function Viewport3D() {
             }
           } else if (e.type === 'keyup') {
             useStore.getState().setDKeyPressed(false);
+          }
+        }
+
+        // Mouse transform gizmo: G = move, R = rotate (Blender-style).
+        if (e.type === 'keydown' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          if (e.key.toLowerCase() === 'g') {
+            useStore.getState().setGizmoMode('translate');
+            useStore.getState().setGizmoEnabled(true);
+          } else if (e.key.toLowerCase() === 'r') {
+            useStore.getState().setGizmoMode('rotate');
+            useStore.getState().setGizmoEnabled(true);
           }
         }
       }
@@ -219,6 +231,7 @@ export default function Viewport3D() {
         <PivotSnapPreview />
         <MiterCutVisualizer />
         <BuilderPreviewRenderer />
+        <TransformGizmo />
       </Canvas>
     </div>
   );

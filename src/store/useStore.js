@@ -662,6 +662,28 @@ const useStore = create((set, get) => ({
   pivotHoverSnap: null,
   setPivotHoverSnap: (v) => set({ pivotHoverSnap: v }),
 
+  // ── Mouse Transform Gizmo (drag-to-move / drag-to-rotate) ─────────────────
+  // 'translate' | 'rotate' — which gizmo is shown for the current selection.
+  // Not persisted — always starts in 'translate' mode each session.
+  gizmoMode: "translate",
+  setGizmoMode: (v) =>
+    set({ gizmoMode: typeof v === "function" ? v(get().gizmoMode) : v }),
+  // Whether the gizmo is shown at all for the current selection.
+  gizmoEnabled: loadState("gizmoEnabled", true),
+  setGizmoEnabled: (v) => {
+    const next = typeof v === "function" ? v(get().gizmoEnabled) : v;
+    set({ gizmoEnabled: next });
+    updateActiveWorkspaceStorage((current) => ({
+      ...current,
+      gizmoEnabled: next,
+    }));
+  },
+  // True only while the user is actively dragging the gizmo handle — used to
+  // suspend OrbitControls so orbiting doesn't fight the drag.
+  isGizmoDragging: false,
+  setIsGizmoDragging: (v) =>
+    set({ isGizmoDragging: typeof v === "function" ? v(get().isGizmoDragging) : v }),
+
   // Persisted custom measurements
   measurements: loadState("measurements", []),
   setMeasurements: (v) =>

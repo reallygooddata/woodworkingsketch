@@ -113,3 +113,31 @@ export const calculateGroupAABB = (groupId, boards, groups) => {
         ...aabb
     };
 };
+
+/**
+ * Compute a single world-space anchor point [x, y, z] for a list of boards —
+ * the center of their combined AABB. Falls back to averaging raw positions
+ * when every board is a non-extent shape (e.g. reference planes), since
+ * computeWorldAABB skips those and would otherwise yield an infinite box.
+ * @param {Array} boardList - The boards to anchor
+ * @returns {number[]} [x, y, z]
+ */
+export const computeSelectionAnchor = (boardList) => {
+    const solids = boardList.filter(b => b.shape !== 'plane');
+    if (solids.length > 0) {
+        const aabb = computeWorldAABB(solids);
+        if (Number.isFinite(aabb.minX)) {
+            return [
+                (aabb.minX + aabb.maxX) / 2,
+                (aabb.minY + aabb.maxY) / 2,
+                (aabb.minZ + aabb.maxZ) / 2,
+            ];
+        }
+    }
+    if (boardList.length === 0) return [0, 0, 0];
+    const sum = boardList.reduce(
+        (acc, b) => [acc[0] + b.position[0], acc[1] + b.position[1], acc[2] + b.position[2]],
+        [0, 0, 0]
+    );
+    return [sum[0] / boardList.length, sum[1] / boardList.length, sum[2] / boardList.length];
+};

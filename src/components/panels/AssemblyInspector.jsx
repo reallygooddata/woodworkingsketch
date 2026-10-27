@@ -3,6 +3,7 @@ import { computeWorldAABB, collectChildBoards } from '../../utils/sceneGraph';
 import useStore from '../../store/useStore';
 import ParametricControls from './ParametricControls';
 import NumericInput from '../NumericInput';
+import GizmoModeToggle from './GizmoModeToggle';
 
 // Round to ≤4 decimal places, stripping trailing zeros
 const fmt4 = (v) => parseFloat(v.toFixed(4));
@@ -141,6 +142,7 @@ const AssemblyInspector = ({ selectedGroup }) => {
                     style={{ flex: 1, width: '100%', background: isWorkspace ? 'transparent' : 'rgba(128,128,128,0.15)', padding: '6px 12px', borderRadius: '6px', border: '1px solid', borderColor: isWorkspace ? 'transparent' : 'var(--border-color)', color: 'var(--accent-color)', fontSize: 'inherit', fontWeight: 'inherit', outline: 'none' }}
                 />
             </div>
+            {!isWorkspace && <GizmoModeToggle />}
             <div className="inspector-card">
                 <h4>Overall Dimensions ({units === 'metric' ? 'mm' : 'in'})</h4>
                 <div className="vec3-inputs">

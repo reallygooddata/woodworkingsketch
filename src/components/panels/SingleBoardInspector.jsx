@@ -4,6 +4,7 @@ import { normalizeMaterial, getMaterialDisplayColor, WOOD_CATALOGUE } from '../.
 import useStore from '../../store/useStore';
 import ParametricControls from './ParametricControls';
 import NumericInput from '../NumericInput';
+import GizmoModeToggle from './GizmoModeToggle';
 
 
 // ── Build a compact summary string for each tool type ────────────────────────
@@ -205,6 +206,8 @@ const SingleBoardInspector = ({ selectedBoard }) => {
                     style={{ flex: 1, width: '100%', background: 'rgba(128,128,128,0.15)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', color: 'var(--accent-color)', fontSize: 'inherit', fontWeight: 'inherit', outline: 'none' }}
                 />
             </div>
+            <GizmoModeToggle />
+
             <div className="inspector-card">
                 <h4>Size ({units === 'metric' ? 'mm' : 'in'})</h4>
                 <div className="vec3-inputs">

@@ -3,6 +3,7 @@ import { computeWorldAABB, collectChildBoards } from '../../utils/sceneGraph';
 import useStore from '../../store/useStore';
 import { analyzeTouchConnection } from '../../utils/fastenerAnalyzer';
 import NumericInput from '../NumericInput';
+import GizmoModeToggle from './GizmoModeToggle';
 
 // Round to ≤4 decimal places, stripping trailing zeros
 const fmt4 = (v) => parseFloat(v.toFixed(4));
@@ -231,6 +232,7 @@ const MultiSelectInspector = () => {
             <div className="inspector-title" style={{ marginBottom: '16px' }}>
                 <span style={{ opacity: 0.6, fontSize: '0.85rem' }}>{selectedItemIds.length} Items Selected</span>
             </div>
+            <GizmoModeToggle />
             <div className="inspector-section">
                 <h4>Bounding Box (in)</h4>
                 <p className="hint" style={{ marginTop: '2px', marginBottom: '6px' }}>
