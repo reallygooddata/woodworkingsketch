@@ -1,30 +1,39 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { TransformControls, Html } from '@react-three/drei';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { TransformControls } from '@react-three/drei';
 import * as THREE from 'three';
 import useStore from '../store/useStore';
-import { collectChildBoards, computeSelectionAnchor, computeAlignmentSnap } from '../utils/sceneGraph';
+import { collectChildBoards, computeSelectionAnchor, computeAlignmentSnap, computeWorldAABB } from '../utils/sceneGraph';
 import { propagateMove } from '../utils/constraintSolver';
 import { getGridStep } from '../utils/units';
+import RotateAxisHandle from './RotateAxisHandle';
+
+// Matches the "Tilt Front/Back" (X) / "Spin Flat" (Y) / "Tilt Left/Right" (Z)
+// buttons already in the Local Orientation inspector panel, so the same
+// axis always means the same thing (and the same color) everywhere.
+const ROTATE_AXES = [
+  { index: 0, color: '#ff3b30', label: 'Tilt Front/Back' },
+  { index: 1, color: '#3cc85a', label: 'Spin Flat' },
+  { index: 2, color: '#3c96ff', label: 'Tilt Left/Right' },
+];
 
 // World-space position is clamped to the same safe bounds used elsewhere
 // in the app (see boardSlice.updateVector) so a wild drag can't send a
 // board flying off into unusable coordinates.
 const POSITION_LIMIT = 5000;
 const clampPos = (v) => Math.min(POSITION_LIMIT, Math.max(-POSITION_LIMIT, v));
-// Rotation is free (no forced snapping) — but the live angle readout lights
-// up whenever it passes within this tolerance of a "standard" angle
-// (0°, 45°, 90°, 135°...), so you can feel/see when you've hit one without
-// being locked to it.
-const STANDARD_ANGLE_STEP = 45;
-const STANDARD_ANGLE_TOLERANCE = 1; // degrees
 
 /**
  * On-screen move/rotate gizmo for the current selection.
  *
  * Mirrors the math already used by the keyboard/inspector actions:
  *  - translate: same constraint (Glue) propagation as updateVector/moveGroup.
- *  - rotate (single board): same local-axis quaternion approach as incrementRotation.
- *  - rotate (multi/group): same AABB-centroid pivot approach as incrementAssemblyRotation.
+ *  - rotate: three RotateAxisHandle badges (one per axis, color-matched to
+ *    the Local Orientation inspector buttons) drive the proxy's quaternion
+ *    with the same local-axis-post-multiply math as incrementRotation
+ *    (single board) or world-axis-pre-multiply math as incrementAssemblyRotation
+ *    (multi/group). handleObjectChange then writes that back exactly as
+ *    before — Euler orientation for a single board, AABB-centroid pivot
+ *    swing for multi/group.
  */
 export default function TransformGizmo() {
   const selectedItemIds = useStore(s => s.selectedItemIds);
@@ -32,6 +41,7 @@ export default function TransformGizmo() {
   const gizmoEnabled = useStore(s => s.gizmoEnabled);
   const gridSnap = useStore(s => s.gridSnap);
   const units = useStore(s => s.units);
+  const rotationStep = useStore(s => s.rotationStep);
   const setIsGizmoDragging = useStore(s => s.setIsGizmoDragging);
   const setLiveDragBoardIds = useStore(s => s.setLiveDragBoardIds);
 
@@ -78,27 +88,38 @@ export default function TransformGizmo() {
 
     let anchor;
     const quat = new THREE.Quaternion();
+    // Per-axis half-extent used to offset each rotate badge off the
+    // selection, so it sits just outside the relevant face/edge instead of
+    // overlapping the geometry — local board half-size for a single board
+    // (so badges stay attached to the right face as it spins), AABB
+    // half-extent along the corresponding world axis for a group.
+    let halfExtents;
     if (isSingleBoardMode) {
       anchor = [...activeBoards[0].position];
       const euler = new THREE.Euler(...(activeBoards[0].orientation || [0, 0, 0]), 'YXZ');
       quat.setFromEuler(euler);
+      halfExtents = activeBoards[0].size.map(s => s / 2);
     } else {
       anchor = computeSelectionAnchor(activeBoards);
+      const aabb = computeWorldAABB(activeBoards);
+      halfExtents = [
+        (aabb.maxX - aabb.minX) / 2,
+        (aabb.maxY - aabb.minY) / 2,
+        (aabb.maxZ - aabb.minZ) / 2,
+      ];
     }
 
     return {
       activeBoardIds: activeBoards.map(b => b.id.toString()),
       isSingleBoardMode,
       anchor,
+      halfExtents,
       quat: [quat.x, quat.y, quat.z, quat.w],
     };
   }, [gizmoEnabled, suppressed, selectionSignature, gizmoMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const snapStep = getGridStep(gridSnap, units); // inches; 0 means "off"
   const translationSnap = snapStep > 0 ? snapStep : null;
-
-  const controlsRef = useRef(null);
-  const [rotationAngleDeg, setRotationAngleDeg] = useState(null);
 
   const handleMouseDown = useCallback(() => {
     const proxy = proxyRef.current;
@@ -179,9 +200,6 @@ export default function TransformGizmo() {
       }));
     } else {
       const qCurrent = proxy.quaternion;
-      if (controlsRef.current) {
-        setRotationAngleDeg(THREE.MathUtils.radToDeg(controlsRef.current.rotationAngle));
-      }
       state.setBoards(state.boards.map(b => {
         const snap = drag.snapshots.get(b.id.toString());
         if (!snap) return b;
@@ -210,50 +228,47 @@ export default function TransformGizmo() {
   const handleMouseUp = useCallback(() => {
     setIsGizmoDragging(false);
     setLiveDragBoardIds([]);
-    setRotationAngleDeg(null);
     dragRef.current = null;
   }, [setIsGizmoDragging, setLiveDragBoardIds]);
 
   if (!placement) return null;
 
-  const space = (gizmoMode === 'rotate' && placement.isSingleBoardMode) ? 'local' : 'world';
-
   return (
     <group key={`${selectionSignature}_${gizmoMode}`}>
       <group ref={proxyRef} position={placement.anchor} quaternion={placement.quat} />
-      <TransformControls
-        object={proxyRef}
-        mode={gizmoMode}
-        space={space}
-        size={0.85}
-        translationSnap={gizmoMode === 'translate' ? translationSnap : null}
-        onMouseDown={handleMouseDown}
-        onObjectChange={handleObjectChange}
-        onMouseUp={handleMouseUp}
-        ref={controlsRef}
-      />
-      {rotationAngleDeg !== null && (() => {
-        const nearestStandard = Math.round(rotationAngleDeg / STANDARD_ANGLE_STEP) * STANDARD_ANGLE_STEP;
-        const atStandardAngle = Math.abs(rotationAngleDeg - nearestStandard) <= STANDARD_ANGLE_TOLERANCE;
-        return (
-          <Html position={placement.anchor} center style={{ pointerEvents: 'none' }}>
-            <div style={{
-              transform: `translateY(-48px) scale(${atStandardAngle ? 1.15 : 1})`,
-              transition: 'transform 80ms ease-out, background 80ms, color 80ms, border-color 80ms',
-              background: atStandardAngle ? 'rgba(34, 197, 94, 0.95)' : 'rgba(20, 20, 22, 0.85)',
-              color: atStandardAngle ? '#0a0a0a' : '#ffffff',
-              fontWeight: 700,
-              fontSize: '14px',
-              padding: '3px 10px',
-              borderRadius: '6px',
-              border: `1px solid ${atStandardAngle ? '#22c55e' : 'rgba(255,255,255,0.25)'}`,
-              whiteSpace: 'nowrap',
-            }}>
-              {rotationAngleDeg >= 0 ? '+' : ''}{rotationAngleDeg.toFixed(1)}°{atStandardAngle ? ` (${nearestStandard}°)` : ''}
-            </div>
-          </Html>
-        );
-      })()}
+      {gizmoMode === 'translate' ? (
+        <TransformControls
+          object={proxyRef}
+          mode="translate"
+          space="world"
+          size={0.85}
+          translationSnap={translationSnap}
+          onMouseDown={handleMouseDown}
+          onObjectChange={handleObjectChange}
+          onMouseUp={handleMouseUp}
+        />
+      ) : (
+        // Three per-axis "spin" badges in place of the native 3-ring rotate
+        // sphere — see RotateAxisHandle for why. Each drives the same proxy
+        // object, so everything below (write-back to board
+        // position/orientation, local vs. group pivot math) is unchanged.
+        ROTATE_AXES.map(({ index, color, label }) => (
+          <RotateAxisHandle
+            key={index}
+            axisIndex={index}
+            color={color}
+            label={label}
+            anchor={placement.anchor}
+            halfExtent={placement.halfExtents[index]}
+            proxyRef={proxyRef}
+            composeMode={placement.isSingleBoardMode ? 'local' : 'world'}
+            rotationStep={rotationStep}
+            onDragStart={handleMouseDown}
+            onDrag={handleObjectChange}
+            onDragEnd={handleMouseUp}
+          />
+        ))
+      )}
     </group>
   );
 }

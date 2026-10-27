@@ -35,7 +35,6 @@ const fmt4 = (v) => parseFloat(v.toFixed(4));
 const SingleBoardInspector = ({ selectedBoard }) => {
     const [cloneOffset, setCloneOffset] = useState(0.75);
     const [cloneMode, setCloneMode] = useState('local');
-    const [rotationStep, setRotationStep] = useState(5.0);
     const [alignmentsOpen, setAlignmentsOpen] = useState(false);
 
     const {
@@ -48,6 +47,7 @@ const SingleBoardInspector = ({ selectedBoard }) => {
         removeHardware, updateHardware, selectedHardwareId, setSelectedHardwareId,
         updateSelectedBoards, addRecordedStep,
         incrementRotation, resetRotation,
+        rotationStep, setRotationStep,
         cloneBoard
     } = useStore();
 

@@ -16,12 +16,12 @@ const AssemblyInspector = ({ selectedGroup }) => {
         moveGroup, setSelectedItemIds, setGroups, setBoards,
         dropGroupToFloor, glueAssembly, unglueAssembly, createPivotProxy,
         handleAssemblyDelete, cloneAssembly, updateProceduralBox,
-        constraintTargetMode, setConstraintTargetMode, incrementAssemblyRotation
+        constraintTargetMode, setConstraintTargetMode, incrementAssemblyRotation,
+        rotationStep, setRotationStep
     } = useStore();
 
     const [cloneMode, setCloneMode] = useState('worldX');
     const [cloneOffset, setCloneOffset] = useState(12);
-    const [rotationStep, setRotationStep] = useState(5.0);
 
     const isWorkspace = selectedGroup === 'Workspace';
     const meta = !isWorkspace && groups[selectedGroup] ? groups[selectedGroup].meta : null;

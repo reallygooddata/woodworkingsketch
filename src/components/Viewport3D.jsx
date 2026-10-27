@@ -200,7 +200,17 @@ export default function Viewport3D() {
 
   return (
     <div className="viewport-container" style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <Canvas shadows={lighting?.shadows ? 'soft' : false} onPointerMissed={() => setSelectedItemIds([])}>
+      <Canvas
+        shadows={lighting?.shadows ? 'soft' : false}
+        onPointerMissed={() => {
+          // The view-axis rotate handle ends its drag with a raw window
+          // pointerup, which can land over empty canvas once the board has
+          // spun away from the cursor — don't let that register as a
+          // click-to-deselect the way an actual empty-space click would.
+          if (useStore.getState().isGizmoDragging) return;
+          setSelectedItemIds([]);
+        }}
+      >
         <SceneLights lighting={lighting} />
 
         <GizmoControls />

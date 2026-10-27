@@ -82,6 +82,19 @@ const useStore = create((set, get) => ({
   setIsOrtho: (v) =>
     set({ isOrtho: typeof v === "function" ? v(get().isOrtho) : v }),
 
+  // Step size (degrees) for the Local Orientation +/- nudge buttons and the
+  // on-screen rotate-handle drag snapping, shared across the single-board
+  // and assembly inspectors so picking it in one place applies everywhere.
+  rotationStep: loadState("rotationStep", 5),
+  setRotationStep: (v) => {
+    const next = typeof v === "function" ? v(get().rotationStep) : v;
+    set({ rotationStep: next });
+    updateActiveWorkspaceStorage((current) => ({
+      ...current,
+      rotationStep: next,
+    }));
+  },
+
   // Whether scroll-wheel zoom pivots around the point under the cursor
   // (modern CAD-style) vs. always zooming toward the fixed orbit target.
   // Helpful for tall/large models where the target tends to sit near the
