@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Line, Billboard, Text, Html } from '@react-three/drei';
 import useStore from '../store/useStore';
-import { findNearestNeighbors, findAlignments, boardFaceRect, rectFromBounds, groupWorldBounds, collectChildBoards, ALIGNMENT_EPSILON } from '../utils/sceneGraph';
+import { findNearestNeighbors, findAlignments, boardFaceRect, collectChildBoards, ALIGNMENT_EPSILON } from '../utils/sceneGraph';
 import { formatUnit, parseFraction } from '../utils/units';
 
 const AXIS_COLOR = ['#ff3c3c', '#3cc85a', '#3c96ff'];
@@ -22,15 +22,6 @@ const fmt4 = (v) => parseFloat(v.toFixed(4));
 // raw unrotated size), so a vertical/rotated board highlights correctly too.
 function FaceHighlight({ board, axis, value }) {
   return <BoundsFaceHighlight corners={boardFaceRect(board, axis, value)} />;
-}
-
-// Same highlight, but for the combined bounding box of a multi-board (group)
-// drag rather than a single board's true rotated extents — there's no one
-// orientation to speak of for a mixed-orientation selection, so the group's
-// AABB face is used instead (matching the box already used to place/size the
-// group transform gizmo).
-function GroupFaceHighlight({ bounds, axis, value }) {
-  return <BoundsFaceHighlight corners={rectFromBounds(bounds, axis, value)} />;
 }
 
 function BoundsFaceHighlight({ corners }) {
@@ -115,9 +106,13 @@ function GapEditInput({ initialValue, onCommit, onCancel }) {
  *    typing an exact value and pressing Enter (or clicking away) moves the
  *    dragged side to hit that exact gap, keeping the neighbor fixed
  *    (setGapToNeighbor). Shown both while dragging and at rest once selected.
- *  - Bright highlighted faces/edges on BOTH sides the instant any of their
- *    faces (min/center/max, on any axis) line up — including boards that
- *    aren't touching, e.g. two legs reaching the same height (findAlignments).
+ *  - A bright highlighted face on the *neighbor* only, the instant any of
+ *    its faces (min/center/max, on any axis) line up with the dragged
+ *    board/group's — including neighbors that aren't touching, e.g. two
+ *    legs reaching the same height (findAlignments). The dragged side
+ *    itself is intentionally left uncolored: its position is constantly
+ *    changing mid-drag, so highlighting it too would just be noise and
+ *    make the neighbor's highlight harder to spot.
  *    Drag-only: once released, a merely-selected board that's joined/flush
  *    with a neighbor would otherwise stay lit up on nearly every face.
  * For a single board, both checks use its true rotation-aware extents; for
@@ -167,7 +162,6 @@ export function LiveDistanceOverlay() {
   });
   const draggedBoards = Array.from(boardSet);
   if (draggedBoards.length === 0) return null;
-  const isGroup = draggedBoards.length > 1;
   const draggedIds = draggedBoards.map(b => b.id);
 
   const neighbors = findNearestNeighbors(draggedBoards, boards).filter(n => n.gap > ALIGNMENT_EPSILON);
@@ -181,8 +175,6 @@ export function LiveDistanceOverlay() {
   // entirely once the mouse is no longer down.
   const alignments = liveDragBoardIds.length > 0 ? findAlignments(draggedBoards, boards) : [];
   if (neighbors.length === 0 && alignments.length === 0) return null;
-
-  const groupBounds = isGroup ? groupWorldBounds(draggedBoards) : null;
 
   return (
     <group userData={{ printProtected: true }}>
@@ -238,12 +230,11 @@ export function LiveDistanceOverlay() {
       })}
 
       {alignments.map(({ axis, value, neighbor }) => (
-        <group key={`align_${axis}_${neighbor.id}`}>
-          {isGroup
-            ? (groupBounds && <GroupFaceHighlight bounds={groupBounds} axis={axis} value={value} />)
-            : <FaceHighlight board={draggedBoards[0]} axis={axis} value={value} />}
-          <FaceHighlight board={neighbor} axis={axis} value={value} />
-        </group>
+        // Only highlight the neighbor's face — the dragged board's own
+        // position is constantly changing mid-drag, so recoloring it too
+        // (its "old" or in-between position) just adds visual noise and
+        // makes the other boards' highlights harder to pick out.
+        <FaceHighlight key={`align_${axis}_${neighbor.id}`} board={neighbor} axis={axis} value={value} />
       ))}
     </group>
   );
