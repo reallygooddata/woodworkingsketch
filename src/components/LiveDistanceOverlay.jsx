@@ -114,10 +114,12 @@ function GapEditInput({ initialValue, onCommit, onCancel }) {
  *    (findNearestNeighbors). Clicking a label turns it into a text input —
  *    typing an exact value and pressing Enter (or clicking away) moves the
  *    dragged side to hit that exact gap, keeping the neighbor fixed
- *    (setGapToNeighbor).
+ *    (setGapToNeighbor). Shown both while dragging and at rest once selected.
  *  - Bright highlighted faces/edges on BOTH sides the instant any of their
  *    faces (min/center/max, on any axis) line up — including boards that
  *    aren't touching, e.g. two legs reaching the same height (findAlignments).
+ *    Drag-only: once released, a merely-selected board that's joined/flush
+ *    with a neighbor would otherwise stay lit up on nearly every face.
  * For a single board, both checks use its true rotation-aware extents; for
  * a group/assembly, the combined bounding box of the whole selection is used.
  */
@@ -169,7 +171,15 @@ export function LiveDistanceOverlay() {
   const draggedIds = draggedBoards.map(b => b.id);
 
   const neighbors = findNearestNeighbors(draggedBoards, boards).filter(n => n.gap > ALIGNMENT_EPSILON);
-  const alignments = findAlignments(draggedBoards, boards);
+  // Alignment face highlights are drag-only "snap guide" feedback (like
+  // Figma/PowerPoint): each match paints the ENTIRE matched face of both
+  // boards, which is fine as a brief, transient cue while actively dragging
+  // but becomes overwhelming (and stays stuck on) for any merely-selected
+  // board that happens to be joined/flush with another — a normal, common
+  // state for finished joints, where most faces already line up on every
+  // axis. So unlike the gap labels above (useful at rest too), skip this
+  // entirely once the mouse is no longer down.
+  const alignments = liveDragBoardIds.length > 0 ? findAlignments(draggedBoards, boards) : [];
   if (neighbors.length === 0 && alignments.length === 0) return null;
 
   const groupBounds = isGroup ? groupWorldBounds(draggedBoards) : null;
