@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { computeWorldAABB, collectChildBoards } from '../../utils/sceneGraph';
+import { computeWorldAABB, collectChildBoards, worldBoundsOfSelection } from '../../utils/sceneGraph';
 import { propagateMove, checkConstraintConflict, solveFlushSnap, faceToAxis } from '../../utils/constraintSolver';
 import { WOOD_CATALOGUE, PAINT_PALETTE } from '../../utils/materialCatalogue';
 import { calculateBoardCuts } from '../../utils/miterSawCalculator';
@@ -719,6 +719,52 @@ export const createBoardSlice = (set, get) => ({
     const deltaVec = [0, 0, 0];
     deltaVec[axis] = delta;
     const moveMap = propagateMove([movingIdStr], deltaVec, constraints);
+    setBoards(boards.map(b => {
+      const d = moveMap.get(b.id.toString());
+      if (d) {
+        return {
+          ...b,
+          position: [b.position[0] + d[0], b.position[1] + d[1], b.position[2] + d[2]]
+        };
+      }
+      return b;
+    }));
+  },
+  // ─── Set the gap between a dragged board/group and a specific neighbor ────
+  // board along one axis, keeping the neighbor fixed — the click-to-edit
+  // counterpart to LiveDistanceOverlay's gap readouts (findNearestNeighbors
+  // in sceneGraph.js). Unlike setBoardGapOnAxis, `movingIds` may be a whole
+  // group/assembly (moved as a rigid unit via their combined bounds), and
+  // `direction` (1 or -1, from findNearestNeighbors) says which side of the
+  // neighbor the moving side is currently facing, so the sign of the gap is
+  // unambiguous even when the moving side's bounds already sit exactly at
+  // the neighbor's face (gap 0).
+  setGapToNeighbor: (movingIds, axis, direction, neighborId, desiredGap) => {
+    const {
+      boards,
+      constraints,
+      pushHistory,
+      setBoards
+    } = get();
+    const movingIdList = (Array.isArray(movingIds) ? movingIds : [movingIds]).map(id => id.toString());
+    const movingBoards = boards.filter(b => movingIdList.includes(b.id.toString()));
+    const neighbor = boards.find(b => b.id.toString() === neighborId.toString());
+    if (movingBoards.length === 0 || !neighbor) return;
+
+    const movingBounds = worldBoundsOfSelection(movingBoards);
+    const neighborBounds = worldBoundsOfSelection(neighbor);
+    if (!movingBounds || !neighborBounds) return;
+
+    const gap = Math.max(0, desiredGap);
+    const delta = direction === 1
+      ? (neighborBounds.min[axis] - gap) - movingBounds.max[axis]
+      : (neighborBounds.max[axis] + gap) - movingBounds.min[axis];
+    if (Math.abs(delta) < 1e-9) return;
+    pushHistory();
+
+    const deltaVec = [0, 0, 0];
+    deltaVec[axis] = delta;
+    const moveMap = propagateMove(movingIdList, deltaVec, constraints);
     setBoards(boards.map(b => {
       const d = moveMap.get(b.id.toString());
       if (d) {

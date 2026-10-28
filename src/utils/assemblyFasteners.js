@@ -8,6 +8,26 @@
  */
 
 import { analyzeTouchConnection } from './fastenerAnalyzer';
+import { FACE_MAP } from './geometryBuilders';
+
+// The actual hole-carving geometry (buildBlindHoleTool in geometryBuilders.js)
+// independently decides which of a face's two in-plane axes is the "span"
+// (gets `offset`) vs. "thickness" (gets `offsetY`) by comparing that board's
+// own `size` on those two axes — NOT by reusing whatever axis this file
+// picked as the shared fastener-distribution axis. Those two choices only
+// agree by coincidence for "normal"-proportioned boards; they can disagree
+// whenever a board's dimensions are stored in an unexpected order — e.g. a
+// "Vertical"-oriented board keeps its 24" length in the size[1] slot instead
+// of size[0]. When they disagree, the hole gets carved on the wrong local
+// axis, leaving the fastener fully embedded in solid, uncut wood. This
+// mirrors buildBlindHoleTool's own rule per-board so the two always agree.
+function faceOffsetsFor(board, faceName, distAxisIdx, distVal, otherVal) {
+  const { faceAxes } = FACE_MAP[faceName];
+  const spanAxis = board.size[faceAxes[0]] >= board.size[faceAxes[1]] ? faceAxes[0] : faceAxes[1];
+  return spanAxis === distAxisIdx
+    ? { offset: distVal, offsetY: otherVal }
+    : { offset: otherVal, offsetY: distVal };
+}
 
 export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups, constraints) => {
   // 1. Pre-clean any existing smart smart-fasteners or constraints between these two
@@ -153,6 +173,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
       });
     } else if (config.type === 'dowels') {
       // Dowels are circular holes in BOTH boards
+      const dowelFacesA = faceOffsetsFor(boardA, contactFaceA, distAxisIdx, offsetValA, localOffsetY_A);
+      const dowelFacesB = faceOffsetsFor(boardB, contactFaceB, distAxisIdx, offsetValB, localOffsetY_B);
       newBoardA.operations.push({
         id: `op_dowel_A_${fId}`,
         type: 'hole',
@@ -160,8 +182,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
         axis: touchAxis,
         radius: 0.1875,
         depth: 0.75,
-        offset: offsetValA,
-        offsetY: localOffsetY_A,
+        offset: dowelFacesA.offset,
+        offsetY: dowelFacesA.offsetY,
         source: 'smart-fastener'
       });
 
@@ -172,8 +194,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
         axis: touchAxis,
         radius: 0.1875,
         depth: 0.75,
-        offset: offsetValB,
-        offsetY: localOffsetY_B,
+        offset: dowelFacesB.offset,
+        offsetY: dowelFacesB.offsetY,
         source: 'smart-fastener'
       });
 
@@ -264,10 +286,14 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
         const isA_Slat = boardA.position[1] > boardB.position[1];
         const slatBoard = isA_Slat ? newBoardA : newBoardB;
         const apronBoard = isA_Slat ? newBoardB : newBoardA;
+        const slatBoardOrig = isA_Slat ? boardA : boardB;
+        const apronBoardOrig = isA_Slat ? boardB : boardA;
         const slatOffsetVal = isA_Slat ? offsetValA : offsetValB;
         const apronOffsetVal = isA_Slat ? offsetValB : offsetValA;
         const slatLocalOffsetY = isA_Slat ? localOffsetY_A : localOffsetY_B;
         const apronLocalOffsetY = isA_Slat ? localOffsetY_B : localOffsetY_A;
+        const slatFaces = faceOffsetsFor(slatBoardOrig, 'top', distAxisIdx, slatOffsetVal, slatLocalOffsetY);
+        const apronFaces = faceOffsetsFor(apronBoardOrig, 'top', distAxisIdx, apronOffsetVal, apronLocalOffsetY);
 
         // clearance/countersink hole on the Slat, from 'top' face going all the way down
         slatBoard.operations.push({
@@ -277,8 +303,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
           axis: 'y',
           radius: 0.125, // countersink clearance
           depth: isA_Slat ? boardA.size[1] : boardB.size[1], // full thickness of Slat
-          offset: slatOffsetVal,
-          offsetY: slatLocalOffsetY,
+          offset: slatFaces.offset,
+          offsetY: slatFaces.offsetY,
           source: 'smart-fastener'
         });
 
@@ -290,8 +316,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
           axis: 'y',
           radius: 0.08, // thin pilot hole
           depth: 1.0,
-          offset: apronOffsetVal,
-          offsetY: apronLocalOffsetY,
+          offset: apronFaces.offset,
+          offsetY: apronFaces.offsetY,
           source: 'smart-fastener'
         });
 
@@ -303,6 +329,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
         fastenerPos[1] = slatTopY - screwLength / 2;
       } else {
         // Fallback for X/Z axes: standard pilot & clearance behavior along the touchAxis
+        const screwFacesA = faceOffsetsFor(boardA, contactFaceA, distAxisIdx, offsetValA, localOffsetY_A);
+        const screwFacesB = faceOffsetsFor(boardB, contactFaceB, distAxisIdx, offsetValB, localOffsetY_B);
         newBoardA.operations.push({
           id: `op_screw_pilot_${fId}`,
           type: 'hole',
@@ -310,8 +338,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
           axis: touchAxis,
           radius: 0.08,
           depth: 1.0,
-          offset: offsetValA,
-          offsetY: localOffsetY_A,
+          offset: screwFacesA.offset,
+          offsetY: screwFacesA.offsetY,
           source: 'smart-fastener'
         });
 
@@ -322,8 +350,8 @@ export const applySmartFastenersHelper = (boardA, boardB, config, boards, groups
           axis: touchAxis,
           radius: 0.125,
           depth: 0.5,
-          offset: offsetValB,
-          offsetY: localOffsetY_B,
+          offset: screwFacesB.offset,
+          offsetY: screwFacesB.offsetY,
           source: 'smart-fastener'
         });
       }

@@ -1,5 +1,39 @@
 import * as THREE from 'three';
 import { OBB } from 'three/addons/math/OBB.js';
+import { getRotatedBoardAABB } from './constraintSolver';
+
+// Auto-spacing rule for Smart Joint Fasteners: keep each fastener this far
+// from the outer edge of the joint face, to avoid splitting the wood. A 2"
+// margin is ideal, but narrow dimensional lumber (e.g. a 2x4's 3.5" face)
+// can't fit two fasteners with 2" clear on *both* sides — that scenario
+// used to silently collapse to a single centered fastener regardless of
+// how many were requested. Scale the margin down smoothly for faces at or
+// under 4" wide instead; wider faces are unaffected (still get the full
+// 2" margin, same as before).
+const PREFERRED_FASTENER_MARGIN = 2.0;
+const MIN_FASTENER_MARGIN = 0.5;
+// Even with a scaled-down margin, don't allow multiple fasteners if the
+// usable gap between them would be under 1" — e.g. a 2x2's 1.5" face
+// should still get a single centered fastener rather than two crammed
+// right next to each other.
+const MIN_ACTIVE_LENGTH_FOR_MULTIPLE = 1.0;
+function fastenerMarginFor(totalLength) {
+  if (totalLength > PREFERRED_FASTENER_MARGIN * 2) return PREFERRED_FASTENER_MARGIN;
+  return Math.max(MIN_FASTENER_MARGIN, totalLength / 4);
+}
+
+/**
+ * Given the width of a joint face, returns the fastener edge margin and
+ * whether that face can usefully fit more than one fastener at all (see
+ * MIN_ACTIVE_LENGTH_FOR_MULTIPLE above). Shared by the count calculation
+ * (MultiSelectInspector) and the actual placement (getPositions below) so
+ * the two always agree.
+ */
+export function fastenerLayoutFor(totalLength) {
+  const margin = fastenerMarginFor(totalLength);
+  const activeLength = totalLength - 2 * margin;
+  return { margin, activeLength, allowsMultiple: activeLength >= MIN_ACTIVE_LENGTH_FOR_MULTIPLE };
+}
 
 /**
  * Analyzes the touch connection between two boards.
@@ -46,20 +80,20 @@ export function analyzeTouchConnection(boardA, boardB) {
     return null;
   }
 
-  // 2. Perform bounding box touch analysis (assuming axis-aligned for connection details)
-  const aMinX = boardA.position[0] - boardA.size[0] / 2;
-  const aMaxX = boardA.position[0] + boardA.size[0] / 2;
-  const aMinY = boardA.position[1] - boardA.size[1] / 2;
-  const aMaxY = boardA.position[1] + boardA.size[1] / 2;
-  const aMinZ = boardA.position[2] - boardA.size[2] / 2;
-  const aMaxZ = boardA.position[2] + boardA.size[2] / 2;
-
-  const bMinX = boardB.position[0] - boardB.size[0] / 2;
-  const bMaxX = boardB.position[0] + boardB.size[0] / 2;
-  const bMinY = boardB.position[1] - boardB.size[1] / 2;
-  const bMaxY = boardB.position[1] + boardB.size[1] / 2;
-  const bMinZ = boardB.position[2] - boardB.size[2] / 2;
-  const bMaxZ = boardB.position[2] + boardB.size[2] / 2;
+  // 2. Determine the true world-space touch/overlap using each board's
+  // actual rotated AABB (not raw position ± size/2, which is only correct
+  // for an unrotated board). A board that's been physically rotated — e.g.
+  // a stud tipped up to stand vertically — has `size` values that no
+  // longer line up with world X/Y/Z at all, so reading them directly here
+  // used to silently fail to detect genuine touching joints.
+  const boxA = getRotatedBoardAABB(boardA);
+  const boxB = getRotatedBoardAABB(boardB);
+  const aMinX = boxA.min.x, aMaxX = boxA.max.x;
+  const aMinY = boxA.min.y, aMaxY = boxA.max.y;
+  const aMinZ = boxA.min.z, aMaxZ = boxA.max.z;
+  const bMinX = boxB.min.x, bMaxX = boxB.max.x;
+  const bMinY = boxB.min.y, bMaxY = boxB.max.y;
+  const bMinZ = boxB.min.z, bMaxZ = boxB.max.z;
 
   const TOLERANCE = 0.05; // 1/20 inch tolerance for flush detection
 
@@ -119,20 +153,12 @@ export function analyzeTouchConnection(boardA, boardB) {
   if (touchAxis === 'z' && (spanX <= 0 || spanY <= 0)) return null;
 
   // 3. Classify relative orientation
-  // A connection is parallel ONLY if the board planes (thickness axes) and long axes are both parallel.
-  // Otherwise, they meet at right angles (perpendicular).
-  const getShortestAxis = (size) => {
-    let minVal = Infinity;
-    let minIdx = 0;
-    for (let i = 0; i < 3; i++) {
-      if (size[i] < minVal) {
-        minVal = size[i];
-        minIdx = i;
-      }
-    }
-    return minIdx;
-  };
-
+  // A connection is parallel ONLY if the boards' long axes point the same
+  // (or opposite) way *in world space*. Comparing raw local `size` index
+  // identity (the old approach) breaks the moment either board is rotated
+  // — e.g. a vertical stud's local "long axis" is index 0 (X, its stored
+  // length), but in world space it actually points along Y, so it must be
+  // rotated into world space before comparing against the other board.
   const getLongestAxis = (size) => {
     let maxVal = -1;
     let maxIdx = 0;
@@ -144,13 +170,18 @@ export function analyzeTouchConnection(boardA, boardB) {
     }
     return maxIdx; // 0=X, 1=Y, 2=Z
   };
+  const LOCAL_AXIS_VECTORS = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 1),
+  ];
+  const worldLongAxisDir = (board) => {
+    const [rx, ry, rz] = board.orientation || [0, 0, 0];
+    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ'));
+    return LOCAL_AXIS_VECTORS[getLongestAxis(board.size)].clone().applyQuaternion(quaternion);
+  };
 
-  const shortAxisA = getShortestAxis(boardA.size);
-  const shortAxisB = getShortestAxis(boardB.size);
-  const longAxisA = getLongestAxis(boardA.size);
-  const longAxisB = getLongestAxis(boardB.size);
-
-  const isParallel = shortAxisA === shortAxisB && longAxisA === longAxisB;
+  const isParallel = Math.abs(worldLongAxisDir(boardA).dot(worldLongAxisDir(boardB))) > 0.99;
   const jointType = isParallel ? 'parallel' : 'right-angle';
 
   // 4. Compute distribution list of fasteners using the Auto Spacing Rule
@@ -172,13 +203,11 @@ export function analyzeTouchConnection(boardA, boardB) {
     const minVal = range[0];
     const maxVal = range[1];
     const totalLength = maxVal - minVal;
-    
-    // Auto-spacing rule: 2 inch margin from outer corners
-    const margin = 2.0;
-    const activeLength = totalLength - 2 * margin;
+
+    const { margin, activeLength, allowsMultiple } = fastenerLayoutFor(totalLength);
 
     const coords = [];
-    if (activeLength <= 0 || count === 1) {
+    if (!allowsMultiple || count === 1) {
       // Too short for margin, place in center of contact area
       coords.push((minVal + maxVal) / 2);
     } else {
@@ -190,10 +219,18 @@ export function analyzeTouchConnection(boardA, boardB) {
     return { axis: distAxis, coords, range };
   };
 
-  // Center of contact in the touch axis
-  const touchCenter = touchAxis === 'x' ? (aMaxX + bMinX) / 2 
-                     : touchAxis === 'y' ? (aMaxY + bMinY) / 2 
-                     : (aMaxZ + bMinZ) / 2;
+  // Center of contact in the touch axis — must use whichever pair of faces
+  // actually matched (contactFaceA tells us the direction), not always
+  // "A's max meets B's min": the two boards could just as easily touch the
+  // other way around (A's min meeting B's max), and using the wrong pairing
+  // here put the touch point — and therefore the fastener/hole position —
+  // many inches away from the real joint whenever that happened.
+  const touchCenter = contactFaceA === 'right' ? (aMaxX + bMinX) / 2
+                     : contactFaceA === 'left' ? (aMinX + bMaxX) / 2
+                     : contactFaceA === 'top' ? (aMaxY + bMinY) / 2
+                     : contactFaceA === 'bottom' ? (aMinY + bMaxY) / 2
+                     : contactFaceA === 'front' ? (aMaxZ + bMinZ) / 2
+                     : (aMinZ + bMaxZ) / 2; // 'back'
 
   // Center of the intersection plane in all 3 dimensions
   const centerPos = [

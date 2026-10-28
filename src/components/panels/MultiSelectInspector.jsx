@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { computeWorldAABB, collectChildBoards } from '../../utils/sceneGraph';
 import useStore from '../../store/useStore';
-import { analyzeTouchConnection } from '../../utils/fastenerAnalyzer';
+import { analyzeTouchConnection, fastenerLayoutFor } from '../../utils/fastenerAnalyzer';
 import NumericInput from '../NumericInput';
 import GizmoModeToggle from './GizmoModeToggle';
 
@@ -82,8 +82,12 @@ const MultiSelectInspector = () => {
             } else {
                 totalLength = spanY > spanX ? spanY : spanX;
             }
-            const activeLength = totalLength - 4.0; // 2" margin at each end
-            calculatedCount = activeLength <= 0 ? 1 : Math.max(2, Math.ceil(activeLength / fastenerSpacing) + 1);
+            // Shared with getPositions() in fastenerAnalyzer.js so the count
+            // shown here always matches how many fasteners actually get
+            // placed (margin scales down on narrow faces instead of forcing
+            // a single centered fastener).
+            const { activeLength, allowsMultiple } = fastenerLayoutFor(totalLength);
+            calculatedCount = allowsMultiple ? Math.max(2, Math.ceil(activeLength / fastenerSpacing) + 1) : 1;
         }
     }
 
@@ -218,7 +222,7 @@ const MultiSelectInspector = () => {
                                 onChange={e => setFastenerSpacing(parseInt(e.target.value, 10))}
                                 style={{ width: '100%', accentColor: 'var(--accent-color)', height: '4px', cursor: 'pointer', outline: 'none' }}
                             />
-                            <p className="hint" style={{ fontSize: '0.58rem', marginTop: '2px' }}>Auto-spaced with 2" end margins to prevent splitting.</p>
+                            <p className="hint" style={{ fontSize: '0.58rem', marginTop: '2px' }}>Auto-spaced with end margins to prevent splitting (up to 2", scaled down on narrow faces like a 2x4 so multiple fasteners still fit).</p>
                         </div>
 
                         <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>

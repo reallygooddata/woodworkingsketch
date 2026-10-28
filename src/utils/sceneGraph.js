@@ -163,29 +163,70 @@ const worldBoundsOf = (board) => {
 };
 
 /**
- * Find, for a single board being dragged, the nearest board directly facing
- * it in each of the 6 axis-directions (+X/-X/+Y/-Y/+Z/-Z) — i.e. the board
- * whose cross-section overlaps the dragged board's on the other two axes,
- * with the smallest gap along the axis in question. Used to show live
- * "how far apart" readouts while dragging, without requiring a selection.
+ * Combined world-space bounds of a list of boards — the group counterpart
+ * of worldBoundsOf(), used so a multi-board (group) drag can be treated as
+ * one "dragged" extent for neighbor/alignment detection, the same way a
+ * single board is. Returns null if the list has no solid (non-plane)
+ * boards (nothing to compute a meaningful box from).
+ * @param {Array} boardList
+ * @returns {{min: number[], max: number[]} | null}
+ */
+const worldBoundsOfMany = (boardList) => {
+    const solids = (boardList || []).filter(b => b && b.shape !== 'plane');
+    if (solids.length === 0) return null;
+    const aabb = computeWorldAABB(solids);
+    if (!Number.isFinite(aabb.minX)) return null;
+    return {
+        min: [aabb.minX, aabb.minY, aabb.minZ],
+        max: [aabb.maxX, aabb.maxY, aabb.maxZ],
+    };
+};
+
+/**
+ * Normalizes the "dragged" argument accepted by findNearestNeighbors /
+ * findAlignments — either a single board (back-compat) or an array of
+ * boards (group drag) — into a combined bounds box plus the set of ids to
+ * exclude from the comparison (the dragged board itself, or every board in
+ * the dragged group).
+ * @param {Object|Array} dragged
+ * @returns {{bounds: {min: number[], max: number[]}, excludeIds: Set} | null}
+ */
+const resolveDraggedBounds = (dragged) => {
+    const list = Array.isArray(dragged) ? dragged : [dragged];
+    const solids = list.filter(b => b && b.shape !== 'plane');
+    if (solids.length === 0) return null;
+    const bounds = solids.length === 1 ? worldBoundsOf(solids[0]) : worldBoundsOfMany(solids);
+    if (!bounds) return null;
+    return { bounds, excludeIds: new Set(solids.map(b => b.id)) };
+};
+
+/**
+ * Find, for a board (or a group of boards) being dragged, the nearest board
+ * directly facing it in each of the 6 axis-directions (+X/-X/+Y/-Y/+Z/-Z) —
+ * i.e. the board whose cross-section overlaps the dragged extent's on the
+ * other two axes, with the smallest gap along the axis in question. Used to
+ * show live "how far apart" readouts while dragging, without requiring a
+ * selection.
  *
- * Rotation-aware: uses each board's true (rotated) world-space extents, so
- * this works correctly for a vertical board being lined up against a
- * horizontal one, not just axis-aligned boards.
+ * Rotation-aware for a single dragged board (uses its true rotated
+ * world-space extents); for a group, the combined axis-aligned bounding box
+ * of the whole selection is used as the dragged extent — the same
+ * approximation already used to place/size the group transform gizmo.
  *
- * @param {Object} dragged - The board currently being moved
+ * @param {Object|Array} dragged - The board (or array of boards) currently being moved
  * @param {Array} others - All other boards to check against
  * @returns {Array<{axis: number, direction: 1|-1, gap: number, neighbor: Object, start: number[], end: number[]}>}
  */
 export const findNearestNeighbors = (dragged, others) => {
-    if (!dragged || dragged.shape === 'plane') return [];
-    const { min: dMin, max: dMax } = worldBoundsOf(dragged);
+    const resolved = resolveDraggedBounds(dragged);
+    if (!resolved) return [];
+    const { bounds: { min: dMin, max: dMax }, excludeIds } = resolved;
 
     // key: `${axis}_${direction}` -> best match so far
     const best = {};
 
     others.forEach(o => {
-        if (!o || o.shape === 'plane' || o.id === dragged.id) return;
+        if (!o || o.shape === 'plane' || excludeIds.has(o.id)) return;
         const { min: oMin, max: oMax } = worldBoundsOf(o);
 
         for (let axis = 0; axis < 3; axis++) {
@@ -232,19 +273,19 @@ export const findNearestNeighbors = (dragged, others) => {
 export const ALIGNMENT_EPSILON = 0.05;
 
 /**
- * The 4 world-space corners of one axis-aligned face of a board (e.g. its
- * top face, or its +X face), as a closed rectangle loop suitable for a line
- * or filled plane. `value` is the world coordinate of the face along `axis`;
- * the board's true (rotation-aware) extents on the other two axes determine
- * the rectangle, so a rotated/vertical board highlights correctly too.
- * @param {Object} board
+ * The 4 world-space corners of one axis-aligned face of a `{min, max}` box
+ * (e.g. its top face, or its +X face), as a closed rectangle loop suitable
+ * for a line or filled plane. `value` is the world coordinate of the face
+ * along `axis`; the box's extents on the other two axes determine the
+ * rectangle. Shared by boardFaceRect (single, rotation-aware board) and
+ * group alignment highlights (combined AABB of a multi-board drag).
+ * @param {{min: number[], max: number[]}} bounds
  * @param {number} axis - 0=X, 1=Y, 2=Z
  * @param {number} value - world coordinate of the face along `axis`
  * @returns {number[][]} 4 corner points, in winding order
  */
-export const boardFaceRect = (board, axis, value) => {
+export const rectFromBounds = ({ min, max }, axis, value) => {
     const [oa1, oa2] = [0, 1, 2].filter(a => a !== axis);
-    const { min, max } = worldBoundsOf(board);
     const h1 = (max[oa1] - min[oa1]) / 2;
     const h2 = (max[oa2] - min[oa2]) / 2;
     const c1 = (max[oa1] + min[oa1]) / 2;
@@ -259,34 +300,75 @@ export const boardFaceRect = (board, axis, value) => {
 };
 
 /**
+ * The 4 world-space corners of one axis-aligned face of a board (e.g. its
+ * top face, or its +X face), as a closed rectangle loop suitable for a line
+ * or filled plane. `value` is the world coordinate of the face along `axis`;
+ * the board's true (rotation-aware) extents on the other two axes determine
+ * the rectangle, so a rotated/vertical board highlights correctly too.
+ * @param {Object} board
+ * @param {number} axis - 0=X, 1=Y, 2=Z
+ * @param {number} value - world coordinate of the face along `axis`
+ * @returns {number[][]} 4 corner points, in winding order
+ */
+export const boardFaceRect = (board, axis, value) => rectFromBounds(worldBoundsOf(board), axis, value);
+
+/**
+ * Combined world-space bounds of a group of boards, suitable for passing to
+ * rectFromBounds() to highlight the "dragged" side of an alignment when a
+ * multi-board selection (not a single board) is being moved. Exported for
+ * LiveDistanceOverlay.
+ * @param {Array} boardList
+ * @returns {{min: number[], max: number[]} | null}
+ */
+export const groupWorldBounds = (boardList) => worldBoundsOfMany(boardList);
+
+/**
+ * Public, board-or-group-agnostic bounds lookup — the same normalization
+ * findNearestNeighbors/findAlignments use internally (rotation-aware single
+ * board, combined AABB for a list), exposed for callers that need to turn a
+ * target gap into a concrete position delta (e.g. click-to-edit on a live
+ * distance label).
+ * @param {Object|Array} boardOrBoards
+ * @returns {{min: number[], max: number[]} | null}
+ */
+export const worldBoundsOfSelection = (boardOrBoards) => {
+    const resolved = resolveDraggedBounds(boardOrBoards);
+    return resolved ? resolved.bounds : null;
+};
+
+/**
  * Find every (axis, face-of-dragged, face-of-other) pair whose world
  * coordinate matches within ALIGNMENT_EPSILON — i.e. a min/center/max face
  * of the dragged board lines up with a min/center/max face of another board,
  * whether or not the two boards are actually touching or facing each other.
  * This is the "smart guide" check (like Figma/PowerPoint alignment guides)
  * used to highlight edges the moment two boards line up while dragging.
- * Rotation-aware — a vertical board's true top/bottom/side faces are used,
- * not its unrotated size.
+ * Rotation-aware for a single dragged board; for a group, the combined
+ * axis-aligned bounding box of the whole selection is used (same tradeoff
+ * as findNearestNeighbors).
  *
- * @param {Object} dragged
+ * @param {Object|Array} dragged - A board, or an array of boards (group drag)
  * @param {Array} others
  * @param {number} epsilon
  * @returns {Array<{axis: number, value: number, neighbor: Object}>}
  */
 export const findAlignments = (dragged, others, epsilon = ALIGNMENT_EPSILON) => {
-    if (!dragged || dragged.shape === 'plane') return [];
+    const resolved = resolveDraggedBounds(dragged);
+    if (!resolved) return [];
+    const { bounds: dBounds, excludeIds } = resolved;
 
     const facesOf = (board, axis) => {
         const { min, max } = worldBoundsOf(board);
         return [min[axis], (min[axis] + max[axis]) / 2, max[axis]];
     };
+    const facesOfBounds = ({ min, max }, axis) => [min[axis], (min[axis] + max[axis]) / 2, max[axis]];
 
     const results = [];
     const seen = new Set();
     for (let axis = 0; axis < 3; axis++) {
-        const dFaces = facesOf(dragged, axis);
+        const dFaces = facesOfBounds(dBounds, axis);
         others.forEach(o => {
-            if (!o || o.shape === 'plane' || o.id === dragged.id) return;
+            if (!o || o.shape === 'plane' || excludeIds.has(o.id)) return;
             const oFaces = facesOf(o, axis);
             dFaces.forEach(dVal => {
                 oFaces.forEach(oVal => {
