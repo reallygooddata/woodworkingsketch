@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Line, Billboard, Text, Html } from '@react-three/drei';
 import useStore from '../store/useStore';
-import { findNearestNeighbors, findAlignments, boardFaceRect, collectChildBoards, ALIGNMENT_EPSILON } from '../utils/sceneGraph';
+import { findNearestNeighbors, findAlignments, boardFaceRect, collectChildBoards, worldBoundsOfSelection, ALIGNMENT_EPSILON } from '../utils/sceneGraph';
 import { formatUnit, parseFraction } from '../utils/units';
 
 const AXIS_COLOR = ['#ff3c3c', '#3cc85a', '#3c96ff'];
@@ -136,6 +136,11 @@ export function LiveDistanceOverlay() {
   // render, mirroring NumericInput's own prop-change reset, rather than in
   // a useEffect, which would cause an extra cascading render for this.
   const [prevSignature, setPrevSignature] = useState(null);
+  // The dragged bounds at the moment the current drag began — see the
+  // alignment-axis filter below. Plain state (not a ref) so the
+  // react-hooks/refs lint rule is happy; updated during render the same
+  // way prevSignature is, just above.
+  const [dragStartBounds, setDragStartBounds] = useState(null);
 
   // While actively dragging, liveDragBoardIds is authoritative; once you let
   // go, fall back to the plain selection so the labels (and the ability to
@@ -173,7 +178,39 @@ export function LiveDistanceOverlay() {
   // state for finished joints, where most faces already line up on every
   // axis. So unlike the gap labels above (useful at rest too), skip this
   // entirely once the mouse is no longer down.
-  const alignments = liveDragBoardIds.length > 0 ? findAlignments(draggedBoards, boards) : [];
+  const isDragging = liveDragBoardIds.length > 0;
+  // Capture (or clear) the drag-start baseline the moment dragging
+  // starts/stops. Computed into a local var rather than read back from
+  // state, since the setState below won't be visible until next render —
+  // this keeps the very first drag frame correct too (zero movement yet,
+  // so no axis should pass the filter below).
+  let effectiveStartBounds = dragStartBounds;
+  if (isDragging && dragStartBounds === null) {
+    effectiveStartBounds = worldBoundsOfSelection(draggedBoards);
+    setDragStartBounds(effectiveStartBounds);
+  } else if (!isDragging && dragStartBounds !== null) {
+    effectiveStartBounds = null;
+    setDragStartBounds(null);
+  }
+  let alignments = isDragging ? findAlignments(draggedBoards, boards) : [];
+  // A match on an axis the dragged board hasn't actually moved along since
+  // picking it up (e.g. its depth never changed while you slide it
+  // lengthwise out of a joint) isn't feedback about the CURRENT move — it's
+  // just a pre-existing relationship that happens to still be true, and
+  // showing it looks exactly like a stuck leftover highlight stranded at
+  // the drag's starting point (the neighbor itself never moves, so its
+  // highlighted face stays put regardless of how far the dragged board has
+  // since traveled on other axes). Drop any axis that hasn't moved from the
+  // drag-start bounds by more than ALIGNMENT_EPSILON.
+  if (alignments.length > 0 && effectiveStartBounds) {
+    const current = worldBoundsOfSelection(draggedBoards);
+    const movedAxes = [0, 1, 2].map(axis => {
+      const startCenter = (effectiveStartBounds.min[axis] + effectiveStartBounds.max[axis]) / 2;
+      const currentCenter = (current.min[axis] + current.max[axis]) / 2;
+      return Math.abs(currentCenter - startCenter) > ALIGNMENT_EPSILON;
+    });
+    alignments = alignments.filter(({ axis }) => movedAxes[axis]);
+  }
   if (neighbors.length === 0 && alignments.length === 0) return null;
 
   return (
