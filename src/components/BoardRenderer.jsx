@@ -320,8 +320,6 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
   const selectedEdges = useStore(s => s.selectedEdges);
   const dKeyPressed = useStore(s => s.dKeyPressed);
   const [draggingInfo, setDraggingInfo] = useState(null);
-  const [snappedAxes, setSnappedAxes] = useState({ x: false, y: false, z: false });
-  const isSnapped = snappedAxes.x || snappedAxes.y || snappedAxes.z;
   const { camera, gl } = useThree();
 
 
@@ -411,7 +409,6 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
 
         const snapThreshold = 1.0; // 1 inch snapping threshold
         let snappedPos = [...newPos];
-        const activeSnaps = { x: false, y: false, z: false };
 
         const { setBoards, constraints, boards: latestBoards } = useStore.getState();
 
@@ -454,13 +451,8 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
 
           if (targetSnapVal !== null) {
             snappedPos[axis] = targetSnapVal;
-            if (axis === 0) activeSnaps.x = true;
-            if (axis === 1) activeSnaps.y = true;
-            if (axis === 2) activeSnaps.z = true;
           }
         }
-
-        setSnappedAxes(activeSnaps);
 
         const glueConstraints = Object.fromEntries(
           Object.entries(constraints).filter(([_, c]) => c.type === 'Glue')
@@ -507,7 +499,6 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
 
       setLiveDragBoardIds([]);
       setDraggingInfo(null);
-      setSnappedAxes({ x: false, y: false, z: false });
     };
 
     window.addEventListener('pointermove', onMove);
@@ -1031,7 +1022,13 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
           const matDesc = normalizeMaterial(b.material);
           const matKey = matDesc.type === 'color' ? `color-${matDesc.hex}` : `wood-${matDesc.id}`;
           const commonProps = {
-            emissive: isSelected ? (dKeyPressed ? (isSnapped ? '#22c55e' : '#00f3ff') : '#bc8a5f') : '#000000',
+            // Always a fixed "selected" color while dragging (never the
+            // alignment/snap red) so the dragged board stays visually
+            // distinct from the alignment face-highlights it may be lined
+            // up against (LiveDistanceOverlay's ALIGN_COLOR) — otherwise,
+            // once snapped, the dragged board and the thing it's aligned to
+            // would both turn the same color and become indistinguishable.
+            emissive: isSelected ? (dKeyPressed ? '#00f3ff' : '#bc8a5f') : '#000000',
             emissiveIntensity: isSelected ? (dKeyPressed ? 0.75 : 0.4) : 0,
           };
           if (matDesc.type === 'color') {
@@ -1055,7 +1052,7 @@ const BoardMesh = ({ b, selectedItemIds, toggleSelection, textures, showEdges, c
             />
           );
         })()}
-        {showEdges && <Edges scale={1} threshold={15} color={isSelected ? (dKeyPressed ? (isSnapped ? '#22c55e' : '#00f3ff') : '#ffffff') : '#222222'} />}
+        {showEdges && <Edges scale={1} threshold={15} color={isSelected ? (dKeyPressed ? '#00f3ff' : '#ffffff') : '#222222'} />}
         {/* Axes helper on the mesh (at board center, not pivot) */}
         {isSelected && <axesHelper args={[Math.max(...b.size) * 0.75 + 2.25]} />}
         {((isSelected || (constraintTargetMode && constraintTargetMode.active) || measureEdgesActive) && hoveredFaceData && hoveredFaceData.id === b.id.toString()) && (() => {

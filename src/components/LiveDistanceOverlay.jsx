@@ -6,7 +6,11 @@ import { findNearestNeighbors, findAlignments, boardFaceRect, rectFromBounds, gr
 import { formatUnit, parseFraction } from '../utils/units';
 
 const AXIS_COLOR = ['#ff3c3c', '#3cc85a', '#3c96ff'];
-const ALIGN_COLOR = '#22c55e'; // matches the existing "snapped" highlight color used elsewhere
+// Deliberately distinct from the dragged/selected board's own highlight
+// color (cyan '#00f3ff' in BoardRenderer) so the two never collide — once a
+// board snaps into alignment, both it and the neighbor it aligned to would
+// otherwise turn the same color and become indistinguishable from each other.
+const ALIGN_COLOR = '#ff3b30';
 
 // Round to ≤4 decimal places, stripping trailing zeros — matches the
 // MultiSelectInspector "Distance Between Boards" card's own fmt4.
